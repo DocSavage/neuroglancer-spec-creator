@@ -1,11 +1,13 @@
 """Scene 1: Shard Visualization — Volume → Shard → Minishard → Chunks.
 
-The first scene in the tutorial. Shows the spatial hierarchy that
-neuroglancer sharding creates, using a simplified small grid.
-Split into 3 sub-videos at each zoom level.
+Shows the spatial hierarchy by starting with the full volume divided
+into shard-sized blocks, zooming into one shard to reveal minishards,
+then zooming into one minishard to reveal chunks.
 
-Zoom sequence: zoom in on one shard so it fills the screen, THEN fade
-out the other shards. Same pattern for minishard zoom.
+Each level is a self-contained cube grid at a different scale:
+- Volume = 8×8×8 shard blocks
+- One shard = NxNxN minishard blocks (based on minishard_bits)
+- One minishard = MxMxM chunk blocks (based on preshift_bits)
 """
 
 import math
@@ -25,58 +27,72 @@ from manim import (
     VGroup,
 )
 
-from ngspec.morton import compressed_morton_code
-from ngspec.sharding import compute_sharding_params
 from scenes.common import SHARD_CUBE_COLORS
 
-# Use a small grid so the visualization is legible
-VIZ_GRID = (8, 8, 8)
-SCALE_FACTOR = 0.5
+# Each cube in the grid is this fraction of one grid unit
+CUBE_FILL = 0.85
 
 
-def _wireframe_box(sx, sy, sz, offset, color=WHITE, thickness=0.01):
-    """Create a wireframe bounding box from 12 edges."""
+def _make_grid_cubes(nx, ny, nz, scale, offset, color, opacity=0.3):
+    """Create a grid of cubes. Returns (VGroup_of_all, dict[(x,y,z)] -> cube)."""
+    cubes = VGroup()
+    cube_map = {}
+    for x in range(nx):
+        for y in range(ny):
+            for z in range(nz):
+                c = Cube(
+                    side_length=scale * CUBE_FILL,
+                    fill_color=color, fill_opacity=opacity,
+                    stroke_width=0.5,
+                )
+                c.move_to([
+                    offset[0] + (x + 0.5) * scale,
+                    offset[1] + (y + 0.5) * scale,
+                    offset[2] + (z + 0.5) * scale,
+                ])
+                cubes.add(c)
+                cube_map[(x, y, z)] = c
+    return cubes, cube_map
+
+
+def _grid_lines(nx, ny, nz, scale, offset, color=WHITE, thickness=0.005, opacity=0.2):
+    """Create translucent grid lines subdividing a box."""
     ox, oy, oz = offset
-    corners = [
-        (ox, oy, oz), (ox + sx, oy, oz), (ox + sx, oy + sy, oz), (ox, oy + sy, oz),
-        (ox, oy, oz + sz), (ox + sx, oy, oz + sz), (ox + sx, oy + sy, oz + sz), (ox, oy + sy, oz + sz),
+    sx, sy, sz = nx * scale, ny * scale, nz * scale
+    lines = VGroup()
+    # Lines along X (varying y, z divisions)
+    for iy in range(ny + 1):
+        for iz in range(nz + 1):
+            lines.add(Line3D(
+                [ox, oy + iy * scale, oz + iz * scale],
+                [ox + sx, oy + iy * scale, oz + iz * scale],
+                color=color, thickness=thickness,
+            ))
+    # Lines along Y
+    for ix in range(nx + 1):
+        for iz in range(nz + 1):
+            lines.add(Line3D(
+                [ox + ix * scale, oy, oz + iz * scale],
+                [ox + ix * scale, oy + sy, oz + iz * scale],
+                color=color, thickness=thickness,
+            ))
+    # Lines along Z
+    for ix in range(nx + 1):
+        for iy in range(ny + 1):
+            lines.add(Line3D(
+                [ox + ix * scale, oy + iy * scale, oz],
+                [ox + ix * scale, oy + iy * scale, oz + sz],
+                color=color, thickness=thickness,
+            ))
+    return lines
+
+
+def _cube_center(x, y, z, scale, offset):
+    return [
+        offset[0] + (x + 0.5) * scale,
+        offset[1] + (y + 0.5) * scale,
+        offset[2] + (z + 0.5) * scale,
     ]
-    pairs = [
-        (0, 1), (1, 2), (2, 3), (3, 0),
-        (4, 5), (5, 6), (6, 7), (7, 4),
-        (0, 4), (1, 5), (2, 6), (3, 7),
-    ]
-    edges = VGroup()
-    for i, j in pairs:
-        edges.add(Line3D(
-            start=list(corners[i]), end=list(corners[j]),
-            color=color, thickness=thickness,
-        ))
-    return edges
-
-
-def _chunk_cube(x, y, z, offset, scale, color, opacity=0.4):
-    """Create a single chunk cube at grid position (x, y, z)."""
-    ox, oy, oz = offset
-    cube = Cube(
-        side_length=scale * 0.85,
-        fill_color=color, fill_opacity=opacity, stroke_width=0.5,
-    )
-    cube.move_to([
-        ox + (x + 0.5) * scale,
-        oy + (y + 0.5) * scale,
-        oz + (z + 0.5) * scale,
-    ])
-    return cube
-
-
-def _group_center(chunks, offset, sf):
-    """Compute the 3D center of a list of chunk coordinates."""
-    n = max(len(chunks), 1)
-    cx = sum(offset[0] + (x + 0.5) * sf for x, y, z in chunks) / n
-    cy = sum(offset[1] + (y + 0.5) * sf for x, y, z in chunks) / n
-    cz = sum(offset[2] + (z + 0.5) * sf for x, y, z in chunks) / n
-    return [cx, cy, cz]
 
 
 class ShardVisualizationScene(ThreeDScene):
@@ -91,140 +107,156 @@ class ShardVisualizationScene(ThreeDScene):
         size = list(self.volume_size)
         for _ in range(self.scale_idx):
             size = [math.ceil(s / 2) for s in size]
+
+        # Compute subdivision counts from bit params
+        from ngspec.sharding import compute_sharding_params
         params = compute_sharding_params(tuple(size))
         pre = params["preshift_bits"]
         mini = params["minishard_bits"]
-        shard_bits = params["shard_bits"]
-        grid_full = params["grid_size"]
 
-        gx, gy, gz = VIZ_GRID
-        sf = SCALE_FACTOR
-        sx, sy, sz = gx * sf, gy * sf, gz * sf
-        offset = (-sx / 2, -sy / 2, -sz / 2)
+        # Minishards per shard: 2^mini, laid out as cube root per axis
+        n_mini = 2 ** mini
+        mini_per_axis = max(1, round(n_mini ** (1 / 3)))
 
-        # Compute shard and minishard IDs for every chunk in viz grid
-        shard_map = {}
-        mini_map = {}
-        for x in range(gx):
-            for y in range(gy):
-                for z in range(gz):
-                    code = compressed_morton_code((x, y, z), grid_full)
-                    shifted = code >> pre
-                    mid = shifted & ((1 << mini) - 1) if mini > 0 else 0
-                    sid = (shifted >> mini) & ((1 << shard_bits) - 1) if shard_bits > 0 else 0
-                    shard_map[(x, y, z)] = sid
-                    mini_map[(x, y, z)] = mid
+        # Chunks per minishard: 2^pre, laid out as cube root per axis
+        n_chunks = 2 ** pre
+        chunks_per_axis = max(1, round(n_chunks ** (1 / 3)))
 
-        unique_shards = sorted(set(shard_map.values()))
-        shard_colors = {s: SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
-                        for i, s in enumerate(unique_shards)}
-        shards_to_show = unique_shards[:min(4, len(unique_shards))]
-        target_shard = shards_to_show[0]
-
-        # ──────────────────────────────────────────────
-        # Section 1: Full volume with shards
-        # ──────────────────────────────────────────────
+        # ══════════════════════════════════════════════
+        # Section 1: Full volume as 8×8×8 shard grid
+        # ══════════════════════════════════════════════
         title = Text("Shard Visualization", font_size=28)
         title.to_edge(UP, buff=0.3)
         self.add_fixed_in_frame_mobjects(title)
 
         info = Text(
             f"Volume: {size[0]}x{size[1]}x{size[2]}  |  "
-            f"Showing {gx}x{gy}x{gz} chunk grid",
-            font_size=16,
+            f"8x8x8 shards, {n_mini} minishards/shard, "
+            f"{n_chunks} chunks/minishard",
+            font_size=14,
         )
         info.next_to(title, DOWN, buff=0.15)
         self.add_fixed_in_frame_mobjects(info)
 
         self.set_camera_orientation(phi=70 * DEGREES, theta=-45 * DEGREES)
 
-        bbox = _wireframe_box(sx, sy, sz, offset)
-        self.play(FadeIn(bbox), run_time=0.5)
+        # Draw shard grid
+        shard_n = 8
+        shard_scale = 0.45
+        shard_total = shard_n * shard_scale
+        shard_offset = (-shard_total / 2, -shard_total / 2, -shard_total / 2)
 
-        # Color-code shard groups
-        shard_groups = {}
-        for sid in shards_to_show:
-            grp = VGroup()
-            for (x, y, z), s in shard_map.items():
-                if s == sid:
-                    grp.add(_chunk_cube(x, y, z, offset, sf, shard_colors[sid]))
-            shard_groups[sid] = grp
-            self.play(FadeIn(grp), run_time=0.6)
+        shard_color = SHARD_CUBE_COLORS[0]
+        all_shards, shard_cubes = _make_grid_cubes(
+            shard_n, shard_n, shard_n, shard_scale, shard_offset,
+            color=shard_color, opacity=0.15,
+        )
+        shard_grid = _grid_lines(
+            shard_n, shard_n, shard_n, shard_scale, shard_offset,
+            opacity=0.15,
+        )
 
-        # Brief rotation
+        self.play(FadeIn(shard_grid), run_time=0.5)
+        self.play(FadeIn(all_shards), run_time=0.8)
+
+        # Rotate
         self.begin_ambient_camera_rotation(rate=0.3)
         self.wait(3)
         self.stop_ambient_camera_rotation()
-        self.wait(1)
+        self.wait(0.5)
 
         self.next_section("zoom-shard")
 
-        # ──────────────────────────────────────────────
-        # Section 2: Zoom into one shard, THEN fade others
-        # ──────────────────────────────────────────────
-        target_chunks = [(x, y, z) for (x, y, z), s in shard_map.items() if s == target_shard]
-        center = _group_center(target_chunks, offset, sf)
+        # ══════════════════════════════════════════════
+        # Section 2: Zoom into one shard, fade others, show minishards
+        # ══════════════════════════════════════════════
+        # Pick a shard near center
+        target = (3, 3, 3)
+        target_center = _cube_center(*target, shard_scale, shard_offset)
 
-        # Zoom in first so the target shard fills the screen
+        # Zoom in so this shard fills the screen
         self.move_camera(
-            frame_center=center,
-            zoom=3.0,
+            frame_center=target_center,
+            zoom=5.0,
             run_time=1.5,
         )
 
-        # Now fade out the other shards (and the bounding box)
-        fade_others = [FadeOut(shard_groups[s]) for s in shards_to_show if s != target_shard]
-        fade_others.append(FadeOut(bbox))
-        self.play(*fade_others, run_time=0.8)
+        # Fade out ALL other shard cubes, keeping only the target
+        target_cube = shard_cubes[target]
+        others = VGroup(*[c for coord, c in shard_cubes.items() if coord != target])
+        self.play(FadeOut(others), FadeOut(shard_grid), run_time=0.8)
         self.wait(0.5)
 
-        # Recolor chunks within this shard by minishard ID
-        unique_minis = sorted(set(mini_map[c] for c in target_chunks))
-        mini_colors = {m: SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
-                       for i, m in enumerate(unique_minis)}
-        minis_to_show = unique_minis[:min(6, len(unique_minis))]
-        target_mini = minis_to_show[0]
+        # Now show minishards within this one shard
+        # The shard cube occupies a region from target_center - half_size to + half_size
+        half = shard_scale * CUBE_FILL / 2
+        mini_scale = (shard_scale * CUBE_FILL) / mini_per_axis
+        mini_offset = (
+            target_center[0] - half,
+            target_center[1] - half,
+            target_center[2] - half,
+        )
 
-        # Replace shard-colored cubes with minishard-colored ones
-        self.play(FadeOut(shard_groups[target_shard]), run_time=0.3)
+        # Fade out the shard cube, replace with minishard cubes
+        self.play(FadeOut(target_cube), run_time=0.3)
 
-        mini_groups = {}
-        for mid in minis_to_show:
-            grp = VGroup()
-            for c in target_chunks:
-                if mini_map[c] == mid:
-                    grp.add(_chunk_cube(*c, offset, sf, mini_colors[mid], opacity=0.5))
-            mini_groups[mid] = grp
-            self.play(FadeIn(grp), run_time=0.3)
+        mini_color = SHARD_CUBE_COLORS[2]
+        all_minis, mini_cubes = _make_grid_cubes(
+            mini_per_axis, mini_per_axis, mini_per_axis,
+            mini_scale, mini_offset,
+            color=mini_color, opacity=0.3,
+        )
+        self.play(FadeIn(all_minis), run_time=0.6)
+        self.wait(1.5)
 
-        self.wait(2)
         self.next_section("zoom-minishard")
 
-        # ──────────────────────────────────────────────
-        # Section 3: Zoom into one minishard, THEN fade others
-        # ──────────────────────────────────────────────
-        mini_chunks = [c for c in target_chunks if mini_map[c] == target_mini]
-        mini_center = _group_center(mini_chunks, offset, sf)
+        # ══════════════════════════════════════════════
+        # Section 3: Zoom into one minishard, fade others, show chunks
+        # ══════════════════════════════════════════════
+        mini_target = (1, 1, 1)
+        mini_target_center = _cube_center(*mini_target, mini_scale, mini_offset)
 
-        # Zoom in first
+        # Zoom in
         self.move_camera(
-            frame_center=mini_center,
-            zoom=6.0,
+            frame_center=mini_target_center,
+            zoom=15.0,
             run_time=1.5,
         )
 
         # Fade out other minishards
-        fade_minis = [FadeOut(mini_groups[m]) for m in minis_to_show if m != target_mini]
-        if fade_minis:
-            self.play(*fade_minis, run_time=0.8)
+        mini_target_cube = mini_cubes[mini_target]
+        mini_others = VGroup(*[c for coord, c in mini_cubes.items() if coord != mini_target])
+        self.play(FadeOut(mini_others), run_time=0.8)
+        self.wait(0.5)
 
-        # Recolor individual chunks with distinct colors
-        self.play(FadeOut(mini_groups[target_mini]), run_time=0.3)
-        chunk_cubes = VGroup()
-        for i, c in enumerate(mini_chunks):
-            color = SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
-            chunk_cubes.add(_chunk_cube(*c, offset, sf, color, opacity=0.6))
-        self.play(FadeIn(chunk_cubes), run_time=0.5)
+        # Show chunks within this minishard
+        mini_half = mini_scale * CUBE_FILL / 2
+        chunk_scale = (mini_scale * CUBE_FILL) / chunks_per_axis
+        chunk_offset = (
+            mini_target_center[0] - mini_half,
+            mini_target_center[1] - mini_half,
+            mini_target_center[2] - mini_half,
+        )
+
+        self.play(FadeOut(mini_target_cube), run_time=0.3)
+
+        chunk_cubes_group = VGroup()
+        idx = 0
+        for cx in range(chunks_per_axis):
+            for cy in range(chunks_per_axis):
+                for cz in range(chunks_per_axis):
+                    color = SHARD_CUBE_COLORS[idx % len(SHARD_CUBE_COLORS)]
+                    c = Cube(
+                        side_length=chunk_scale * CUBE_FILL,
+                        fill_color=color, fill_opacity=0.5,
+                        stroke_width=0.5,
+                    )
+                    c.move_to(_cube_center(cx, cy, cz, chunk_scale, chunk_offset))
+                    chunk_cubes_group.add(c)
+                    idx += 1
+
+        self.play(FadeIn(chunk_cubes_group), run_time=0.6)
 
         # Hierarchy label
         hierarchy = Text(

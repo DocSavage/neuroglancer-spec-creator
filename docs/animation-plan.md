@@ -19,12 +19,12 @@ The scenes are numbered in the order the viewer should watch them:
 
 **Animation sequence**:
 1. Show the full volume as a 3D bounding box with labeled dimensions.
-2. Overlay the chunk grid (translucent lines showing 64-voxel divisions).
-3. Color-code a few shards as groups of chunks within the volume.
-4. **Zoom in** on one shard so it occupies most of the screen. The shard stays as-is in its color. Then the OTHER shards fade out, leaving only the zoomed-in shard visible.
-5. Within that shard, show the minishards as colored sub-regions. The minishard subdivision should reflect the actual `minishard_bits` — e.g., if 6 bits, that means 2^6 = 64 minishards, roughly 4×4×4 within the shard. Color each minishard distinctly.
-6. **Zoom in** on one minishard so it occupies most of the screen. The OTHER minishards fade out, leaving only the zoomed-in minishard.
-7. Within that minishard, show the individual chunks with different colors corresponding to the `preshift_bits`.
+2. Overlay the "shard" grid (translucent lines showing 8 x 8 x 8 divisions).
+3. Rotate the full volume with the 8 x 8 x 8 shards within.
+4. **Zoom in** on one shard so it occupies most of the screen. The shard stays as-is in its color. Then the OTHER shards fade out, leaving only the zoomed-in shard visible. Note that only ONE shard remains after the other shards fade out.
+5. Within the remaining shard, show the "minishards" as smaller colored blocks distinct from the color of the shard. The minishard subdivision should reflect the actual `minishard_bits` — e.g., if 6 bits, that means 2^6 = 64 minishards, roughly 4×4×4 within the shard. 
+6. **Zoom in** on one minishard so it occupies most of the screen. The OTHER minishards fade out, leaving only the zoomed-in minishard. So at the end of this subscene, only one zoomed-in minishard (represented as a colored block) is visible.
+7. Then, within that minishard, reveal smaller "chunks" with different colors corresponding to the `preshift_bits`.
 8. End frame: the full hierarchy is labeled — volume → shard → minishard → chunks.
 
 Each zoom-in is a split point for a separate video.

@@ -51,20 +51,22 @@ class CompressedMortonScene(Scene):
         table = interleave_table(grid)
 
         # ── Determine which output bits to show vs skip ──
-        # Show first N bits (phase 1), skip uniform middle, show endgame bits
+        # Show first N bits (head), skip uniform middle, show last M bits (tail)
+        # The tail includes the final uniform cycles PLUS the endgame so
+        # viewers see the dimension dropout happen.
         min_bpd = min(bpd)
-        uniform_end = min_bpd * 3  # where all 3 dims still contribute
+        uniform_end = min_bpd * 3
         first_show = min(4 * 3, uniform_end)  # first 4 full X→Y→Z cycles
-        # Show all bits from uniform_end onward (the interesting endgame)
-        # Build a map: visible_index -> table_index, with an ellipsis gap
-        visible_bits = []  # list of table indices to show
-        for j in range(first_show):
-            visible_bits.append(j)
-        ellipsis_pos = len(visible_bits)  # where "..." goes in the output row
-        for j in range(uniform_end, total):
-            visible_bits.append(j)
 
-        has_ellipsis = uniform_end > first_show
+        # Tail: at least 2 full cycles before dropout + all endgame bits
+        tail_start = max(first_show, uniform_end - 2 * 3)  # 2 cycles before endgame
+        tail_bits = list(range(tail_start, total))
+
+        visible_bits = list(range(first_show))
+        ellipsis_pos = len(visible_bits)
+        visible_bits.extend(tail_bits)
+
+        has_ellipsis = tail_start > first_show
         n_visible = len(visible_bits) + (1 if has_ellipsis else 0)
 
         # ── Layout constants ──
