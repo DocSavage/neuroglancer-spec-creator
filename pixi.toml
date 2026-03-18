@@ -17,9 +17,17 @@ pkg-config = "*"
 ffmpeg = ">=5.0"
 freetype = ">=2.10"
 harfbuzz = ">=2.0"
+zlib = "*"
+expat = "*"
+fontconfig = "*"
+manimpango = ">=0.5"
+pycairo = ">=1.25"
 
 [feature.viz.pypi-dependencies]
 manim = ">=0.18.0"
+
+[feature.viz.activation]
+scripts = ["viz-env.sh"]
 
 [environments]
 default = { features = [], solve-group = "default" }

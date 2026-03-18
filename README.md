@@ -32,8 +32,10 @@ pixi install -e viz
 ### Generate a spec
 
 ```bash
-pixi run generate --size 94088,78317,134576 --scales 11
+pixi run generate --size 94088,78317,134576
 ```
+
+The number of scales is auto-computed — it stops at the last scale where the chunk grid has more than one chunk in any dimension. You can override with `--scales N`.
 
 Output:
 
@@ -43,7 +45,7 @@ Scale  Size                         Grid                   Bits             Shar
 0      94088x78317x134576           1471x1224x2103         11+11+12=34         19     6     9     34     524288
 1      47044x39159x67288            736x612x1052           10+10+11=31         16     6     9     31      65536
 ...
-10     92x77x132                    2x2x3                  1+1+2=4              0     0     4      4          1
+11     46x39x66                     1x1x2                  0+0+1=1              0     0     1      1          1
 
 Written: neuroglancer_spec.json
 ```
@@ -52,7 +54,7 @@ Options:
 
 ```
 --size X,Y,Z          Volume dimensions in voxels (required)
---scales N            Number of resolution scales (default: 11)
+--scales N            Number of resolution scales (default: auto)
 --resolution R        Base voxel resolution, 1 or 3 values (default: 8)
 --chunk-size N        Chunk size in voxels (default: 64)
 --data-type TYPE      uint8, uint16, uint32, uint64, float32 (default: uint8)

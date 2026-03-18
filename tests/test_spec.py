@@ -6,7 +6,7 @@ Validates structure and correctness against the DVID ground truth spec.
 import json
 import math
 
-from ngspec.spec_generator import generate_spec
+from ngspec.spec_generator import compute_num_scales, generate_spec
 
 
 class TestSpecStructure:
@@ -124,6 +124,65 @@ class TestDvidGroundTruth:
             )
             assert gen["key"] == exp["key"], f"Scale {i} key"
             assert gen["resolution"] == exp["resolution"], f"Scale {i} resolution"
+
+
+class TestAutoScales:
+    def test_mcns_auto_gives_12(self):
+        """The mcns volume auto-computes to 12 scales (last multi-chunk grid is 1x1x2)."""
+        assert compute_num_scales((94088, 78317, 134576)) == 12
+
+    def test_clamps_excessive_scales(self):
+        spec = generate_spec((94088, 78317, 134576), num_scales=20)
+        assert len(spec["scales"]) == 12
+
+    def test_respects_fewer_scales(self):
+        spec = generate_spec((94088, 78317, 134576), num_scales=5)
+        assert len(spec["scales"]) == 5
+
+    def test_single_chunk_volume(self):
+        """A volume that fits in one chunk should produce exactly 1 scale."""
+        assert compute_num_scales((64, 64, 64)) == 1
+        spec = generate_spec((64, 64, 64))
+        assert len(spec["scales"]) == 1
+
+    def test_small_volume(self):
+        """128^3 -> grid 2x2x2 at scale 0 only (scale 1 would be 1x1x1)."""
+        assert compute_num_scales((128, 128, 128)) == 1
+
+    def test_last_scale_has_multi_chunk_grid(self):
+        """The final auto-computed scale should still have at least one grid dim > 1."""
+        spec = generate_spec((94088, 78317, 134576))
+        last = spec["scales"][-1]
+        grid = [math.ceil(s / 64) for s in last["size"]]
+        assert any(g > 1 for g in grid)
+
+    def test_no_zero_bit_scales(self):
+        """Auto-computed specs should never include a 0-total-bits scale."""
+        spec = generate_spec((94088, 78317, 134576))
+        for i, scale in enumerate(spec["scales"]):
+            sh = scale["sharding"]
+            total = sh["shard_bits"] + sh["minishard_bits"] + sh["preshift_bits"]
+            assert total > 0, f"Scale {i} has 0 total bits"
+
+    def test_dvid_ground_truth_subset(self):
+        """Auto scales should be a superset of DVID's 11 — first 11 must match."""
+        spec = generate_spec(
+            (94088, 78317, 134576),
+            encoding="jpeg",
+        )
+        assert len(spec["scales"]) >= 11
+        spec_path = "/home/katzw/go-code/src/github.com/janelia-flyem/dvid/test_data/mcns-ng-specs.json"
+        try:
+            with open(spec_path) as f:
+                expected = json.load(f)
+        except FileNotFoundError:
+            import pytest
+            pytest.skip("DVID test data not available")
+        for i in range(11):
+            gen_sh = spec["scales"][i]["sharding"]
+            exp_sh = expected["scales"][i]["sharding"]
+            for field in ("shard_bits", "minishard_bits", "preshift_bits"):
+                assert gen_sh[field] == exp_sh[field], f"Scale {i} {field}"
 
 
 class TestVolumeTypes:

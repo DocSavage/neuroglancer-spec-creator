@@ -13,7 +13,7 @@ import click
 
 from ngspec.morton import bits_per_dimension, total_chunk_bits
 from ngspec.sharding import compute_sharding_params
-from ngspec.spec_generator import generate_spec
+from ngspec.spec_generator import compute_num_scales, generate_spec
 
 
 def parse_size(ctx, param, value):
@@ -49,7 +49,8 @@ def cli():
 @cli.command()
 @click.option("--size", required=True, callback=parse_size,
               help="Volume dimensions as X,Y,Z (e.g., 94088,77248,134592)")
-@click.option("--scales", default=11, type=int, help="Number of resolution scales")
+@click.option("--scales", default=None, type=int,
+              help="Number of resolution scales (default: auto-computed, stops at 1x1x1 grid)")
 @click.option("--resolution", default="8", callback=parse_resolution,
               help="Base voxel resolution (e.g., 8 or 8,8,8)")
 @click.option("--chunk-size", default=64, type=int, help="Chunk size in voxels")
@@ -67,6 +68,18 @@ def cli():
 def generate(size, scales, resolution, chunk_size, data_type, volume_type,
              encoding, output, target_preshift, target_minishard):
     """Generate a neuroglancer multiscale volume spec JSON."""
+
+    # Resolve scale count
+    max_scales = compute_num_scales(size, chunk_size)
+    if scales is None:
+        scales = max_scales
+    else:
+        if scales > max_scales:
+            click.echo(
+                f"Note: clamping --scales {scales} to {max_scales} "
+                f"(grid reaches 1x1x1 at scale {max_scales - 1})"
+            )
+            scales = max_scales
 
     # Print summary table
     click.echo()

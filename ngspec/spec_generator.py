@@ -26,9 +26,34 @@ def _encoding_for_type(volume_type: str) -> str:
     return "jpeg"
 
 
+def compute_num_scales(
+    volume_size: tuple[int, int, int],
+    chunk_size: int = 64,
+) -> int:
+    """Compute the number of useful scales for a volume.
+
+    A scale is useful when at least one grid dimension exceeds 1, meaning
+    there are multiple chunks to organize into shards.  The last included
+    scale is the final one with a multi-chunk grid; scales beyond that
+    would have a 1x1x1 grid (0 total bits, single chunk) and are omitted.
+
+    Always returns at least 1 so that even a single-chunk volume gets one
+    scale entry.
+    """
+    n = 0
+    current_size = tuple(volume_size)
+    while True:
+        grid = tuple(math.ceil(s / chunk_size) for s in current_size)
+        if all(g <= 1 for g in grid):
+            break
+        n += 1
+        current_size = _halve_size(current_size)
+    return max(n, 1)
+
+
 def generate_spec(
     volume_size: tuple[int, int, int],
-    num_scales: int,
+    num_scales: int | None = None,
     voxel_resolution: tuple[float, float, float] = (8.0, 8.0, 8.0),
     data_type: str = "uint8",
     volume_type: str = "image",
@@ -43,7 +68,18 @@ def generate_spec(
 
     Computes correct per-scale sharding parameters by halving the volume
     at each scale and recalculating bit allocations.
+
+    If num_scales is None, automatically stops at the last scale where the
+    grid has more than one chunk in at least one dimension (plus that final
+    1x1x1 scale).  If num_scales is given explicitly, it is clamped to this
+    maximum so that no redundant all-zero scales are emitted.
     """
+    max_scales = compute_num_scales(volume_size, chunk_size)
+    if num_scales is None:
+        num_scales = max_scales
+    else:
+        num_scales = min(num_scales, max_scales)
+
     if encoding is None:
         encoding = _encoding_for_type(volume_type)
 
