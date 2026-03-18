@@ -1,1 +1,7 @@
 neuroglancer_spec.json
+__pycache__/
+*.pyc
+.pytest_cache/
+.pixi/
+media/
+*.egg-info/
