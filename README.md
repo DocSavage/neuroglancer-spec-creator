@@ -70,8 +70,8 @@ Options:
 Requires the `viz` environment.
 
 ```bash
-# All scenes
-pixi run -e viz animate --size 94088,78317,134576 --scales 3 --scene all
+# All scenes (rendered in parallel via multiprocessing)
+pixi run -e viz animate --size 94088,78317,134576 --scene all
 
 # Just the morton code explanation
 pixi run -e viz animate --size 94088,78317,134576 --scene morton
@@ -82,6 +82,8 @@ pixi run -e viz animate --size 94088,78317,134576 --scene bits --scale 0
 # Interactive preview (OpenGL)
 pixi run -e viz animate --size 94088,78317,134576 --scene morton --preview
 ```
+
+Each scene produces its own mp4 in `media/videos/`. When `--scene all` is used, all four scenes render in parallel.
 
 Scenes:
 - **morton** — How chunk coordinates become a compressed morton code
