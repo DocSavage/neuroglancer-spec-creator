@@ -53,22 +53,23 @@ class MultiscaleBitComparison(Scene):
 
         # ── Layout constants ──
         max_total = rows[0]["total"]
-        # Fit the widest strip (scale 0) within frame
-        cell_w = min(0.28, 11.0 / (max_total + 1))
+        cell_w = min(0.28, 10.0 / (max_total + 1))
         cell_h = 0.25
         gap = 0.02
-        row_spacing = cell_h + 0.35
-        start_y = 2.2
+        row_spacing = cell_h + 0.32
+        start_y = 2.0
 
-        # Right edge: all strips align here (LSB = right side)
-        right_x = 4.5
+        # Right edge close to video right side (frame is ~7.1 half-width)
+        right_x = 6.5
 
-        # ── Show strips one at a time ──
-        strips = []
-        labels = []
+        # Fixed left edge for ALL labels (avoids staircase look)
+        label_left_x = -6.2
 
         # Limit to scales that fit on screen
-        max_rows = min(self.num_scales, int((start_y + 3.5) / row_spacing))
+        max_rows = min(self.num_scales, int((start_y + 3.2) / row_spacing))
+
+        # ── Show strips one at a time ──
+        first_strip = None
 
         for i in range(max_rows):
             r = rows[i]
@@ -81,51 +82,38 @@ class MultiscaleBitComparison(Scene):
                 font_size=max(7, int(cell_w * 26)), gap=gap,
             )
 
-            # Right-align: position so right edge of strip aligns with right_x
+            # Right-align to right_x
             strip.move_to(UP * y)
             if len(strip) > 0:
                 offset = right_x - strip.get_right()[0]
                 strip.shift(RIGHT * offset)
 
-            # Row label on the left
+            if i == 0:
+                first_strip = strip
+
+            # Row label at fixed left position
             grid_str = f"{r['grid'][0]}x{r['grid'][1]}x{r['grid'][2]}"
             label = Text(
                 f"Scale {i}  ({grid_str})  {r['total']}b",
                 font_size=11,
             )
-            label.move_to(UP * y)
-            if len(strip) > 0:
-                label.next_to(strip, LEFT, buff=0.2)
-            else:
-                label.move_to(LEFT * 3 + UP * y)
-
-            strips.append(strip)
-            labels.append(label)
+            label.move_to(UP * y + RIGHT * label_left_x)
+            label.align_to(RIGHT * label_left_x, LEFT)
 
             if i == 0:
-                self.play(FadeIn(strip), FadeIn(label), run_time=0.6)
+                # Show MSB/LSB labels with the very first strip
+                msb = Text("MSB", font_size=10, color=WHITE)
+                lsb = Text("LSB", font_size=10, color=WHITE)
+                if len(strip) > 0:
+                    msb.next_to(strip, UP, buff=0.08).align_to(strip, LEFT)
+                    lsb.next_to(strip, UP, buff=0.08).align_to(strip, RIGHT)
+                self.play(FadeIn(strip), FadeIn(label), FadeIn(msb), FadeIn(lsb),
+                          run_time=0.6)
                 self.wait(0.8)
             elif i <= 3:
                 self.play(FadeIn(strip), FadeIn(label), run_time=0.4)
-                self.wait(0.4)
+                self.wait(0.3)
             else:
                 self.play(FadeIn(strip), FadeIn(label), run_time=0.2)
-
-        # ── Column legend ──
-        if max_rows > 0 and len(strips[0]) > 0:
-            # MSB / LSB markers aligned with scale 0 strip
-            msb = Text("MSB", font_size=10, color=WHITE)
-            lsb = Text("LSB", font_size=10, color=WHITE)
-            msb.next_to(strips[0], UP, buff=0.08).align_to(strips[0], LEFT)
-            lsb.next_to(strips[0], UP, buff=0.08).align_to(strips[0], RIGHT)
-            self.play(FadeIn(msb), FadeIn(lsb), run_time=0.3)
-
-        # ── Final insight ──
-        insight = Text(
-            "Shard bits shrink from the left as resolution decreases",
-            font_size=16, color=YELLOW,
-        )
-        insight.to_edge(DOWN, buff=0.2)
-        self.play(FadeIn(insight), run_time=0.4)
 
         self.wait(3)  # Final frame stays

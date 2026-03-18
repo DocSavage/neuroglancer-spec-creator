@@ -3,6 +3,9 @@
 Shows how the morton code bits are partitioned into preshift, minishard,
 and shard regions.  Uses little-endian ordering (MSB=shard on left,
 LSB=preshift on right) with a visual 3D chunk connection.
+
+Split into sub-videos at each region highlight so the presenter can
+pause and explain each part.
 """
 
 import math
@@ -24,7 +27,7 @@ from manim import (
     VGroup,
 )
 
-from ngspec.morton import compressed_morton_code, bits_per_dimension
+from ngspec.morton import compressed_morton_code
 from ngspec.sharding import compute_sharding_params
 from scenes.common import (
     MINISHARD_COLOR,
@@ -39,7 +42,6 @@ def _isometric_cube(center, size=0.6):
     """Draw a small isometric cube as three filled polygons (2D scene)."""
     cx, cy = center
     s = size / 2
-    # Isometric projection offsets
     dx, dy = s * 0.87, s * 0.5
 
     top = Polygon(
@@ -115,21 +117,10 @@ class BitAllocationScene(Scene):
         lsb_label.next_to(strip, UP, buff=0.15).align_to(strip, RIGHT)
         self.play(FadeIn(msb_label), FadeIn(lsb_label), run_time=0.3)
 
-        # ── Braces and labels ──
-        braces = VGroup()
+        self.wait(1)
+        self.next_section("shard-region")
 
-        # Minishard brace ABOVE the strip
-        if mini > 0 and len(mini_cells) > 0:
-            mini_brace = Brace(mini_cells, UP, color=MINISHARD_COLOR)
-            mini_text = Text(
-                f"minishard_bits: {mini}\n"
-                f"2^{mini} = {2**mini} minishards/shard",
-                font_size=12, color=MINISHARD_COLOR,
-            )
-            mini_text.next_to(mini_brace, UP, buff=0.08)
-            braces.add(mini_brace, mini_text)
-
-        # Shard brace BELOW the strip
+        # ── Shard brace BELOW the strip ──
         if shard > 0 and len(shard_cells) > 0:
             shard_brace = Brace(shard_cells, DOWN, color=SHARD_COLOR)
             shard_text = Text(
@@ -138,9 +129,28 @@ class BitAllocationScene(Scene):
                 font_size=12, color=SHARD_COLOR,
             )
             shard_text.next_to(shard_brace, DOWN, buff=0.08)
-            braces.add(shard_brace, shard_text)
+            self.play(FadeIn(shard_brace), FadeIn(shard_text), run_time=0.5)
+            self.play(Indicate(shard_cells, color=SHARD_COLOR), run_time=0.8)
 
-        # Preshift brace BELOW the strip
+        self.wait(1.5)
+        self.next_section("minishard-region")
+
+        # ── Minishard brace ABOVE the strip ──
+        if mini > 0 and len(mini_cells) > 0:
+            mini_brace = Brace(mini_cells, UP, color=MINISHARD_COLOR)
+            mini_text = Text(
+                f"minishard_bits: {mini}\n"
+                f"2^{mini} = {2**mini} minishards/shard",
+                font_size=12, color=MINISHARD_COLOR,
+            )
+            mini_text.next_to(mini_brace, UP, buff=0.08)
+            self.play(FadeIn(mini_brace), FadeIn(mini_text), run_time=0.5)
+            self.play(Indicate(mini_cells, color=MINISHARD_COLOR), run_time=0.8)
+
+        self.wait(1.5)
+        self.next_section("preshift-region")
+
+        # ── Preshift brace BELOW the strip ──
         if pre > 0 and len(pre_cells) > 0:
             pre_brace = Brace(pre_cells, DOWN, color=PRESHIFT_COLOR)
             pre_text = Text(
@@ -149,16 +159,16 @@ class BitAllocationScene(Scene):
                 font_size=12, color=PRESHIFT_COLOR,
             )
             pre_text.next_to(pre_brace, DOWN, buff=0.08)
-            braces.add(pre_brace, pre_text)
+            self.play(FadeIn(pre_brace), FadeIn(pre_text), run_time=0.5)
+            self.play(Indicate(pre_cells, color=PRESHIFT_COLOR), run_time=0.8)
 
-        self.play(FadeIn(braces), run_time=0.5)
-        self.wait(1)
+        self.wait(1.5)
+        self.next_section("chunk-example")
 
         # ── 3D chunk visual with coordinate ──
         chunk_y = -2.2
         cube = _isometric_cube((0, chunk_y), size=0.7)
 
-        # Example coordinate
         ex_coord = (42, 17, 83)
         coord_text = Text(
             f"chunk ({ex_coord[0]}, {ex_coord[1]}, {ex_coord[2]})",
@@ -166,48 +176,40 @@ class BitAllocationScene(Scene):
         )
         coord_text.next_to(cube, RIGHT, buff=0.3)
 
-        # Compute its morton code
         code = compressed_morton_code(ex_coord, grid)
         code_text = Text(
-            f"morton = {code}",
-            font_size=14, color=YELLOW,
+            f"morton = {code}", font_size=14, color=YELLOW,
         )
         code_text.next_to(coord_text, DOWN, buff=0.15)
 
         self.play(FadeIn(cube), FadeIn(coord_text), FadeIn(code_text), run_time=0.5)
 
-        # Arrow from chunk to bit strip
         chunk_arrow = Arrow(
             cube.get_top(), strip.get_bottom(),
             color=YELLOW, stroke_width=2, buff=0.1,
         )
         self.play(FadeIn(chunk_arrow), run_time=0.3)
 
-        # ── Highlight regions to show extraction ──
-        self.wait(0.5)
-
-        # Compute shard and minishard IDs for the example
+        # Compute and show shard/minishard IDs
         shifted = code >> pre
         mini_id = shifted & ((1 << mini) - 1) if mini > 0 else 0
         shard_id = (shifted >> mini) & ((1 << shard) - 1) if shard > 0 else 0
 
-        if shard > 0 and len(shard_cells) > 0:
-            shard_id_text = Text(
-                f"shard_id = {shard_id}", font_size=14, color=SHARD_COLOR,
-            )
-            shard_id_text.next_to(shard_cells, LEFT, buff=0.3)
-            self.play(Indicate(shard_cells, color=SHARD_COLOR), run_time=0.5)
-            self.play(FadeIn(shard_id_text), run_time=0.3)
+        id_parts = []
+        if shard > 0:
+            id_parts.append(f"shard_id = {shard_id}")
+        if mini > 0:
+            id_parts.append(f"minishard_id = {mini_id}")
 
-        if mini > 0 and len(mini_cells) > 0:
-            mini_id_text = Text(
-                f"minishard_id = {mini_id}", font_size=14, color=MINISHARD_COLOR,
+        if id_parts:
+            id_text = Text(
+                "  |  ".join(id_parts),
+                font_size=14, color=YELLOW,
             )
-            mini_id_text.next_to(mini_cells, RIGHT, buff=0.3).shift(UP * 0.5)
-            self.play(Indicate(mini_cells, color=MINISHARD_COLOR), run_time=0.5)
-            self.play(FadeIn(mini_id_text), run_time=0.3)
+            id_text.next_to(code_text, DOWN, buff=0.15)
+            self.play(FadeIn(id_text), run_time=0.3)
 
-        # ── Numeric summary ──
+        # Numeric summary
         summary = Text(
             f"{shard} + {mini} + {pre} = {total} bits",
             font_size=16, color=WHITE,

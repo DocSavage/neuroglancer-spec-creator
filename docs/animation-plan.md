@@ -7,6 +7,7 @@
 - **Text within frame**: All text lines must fit well within the video dimensions. Never let text extend near the edges.
 - **Titles appear instantly**: Don't animate titles letter by letter — just pop them up immediately.
 - **Little-endian bit ordering**: MSB on left, LSB on right. Label the ends "MSB" and "LSB".
+- **No bottom subtitles/commentary**: Don't add explanatory text at the bottom of the screen. The animations should speak for themselves and the presenter will narrate.
 
 ## Scene Sequence
 
@@ -20,10 +21,10 @@ The scenes are numbered in the order the viewer should watch them:
 1. Show the full volume as a 3D bounding box with labeled dimensions.
 2. Overlay the chunk grid (translucent lines showing 64-voxel divisions).
 3. Color-code a few shards as groups of chunks within the volume.
-4. **Zoom in** on one shard while the others fade out.
-5. Within that shard, show the minishards as colored sub-regions.
-6. **Zoom in** on one minishard while the others fade out.
-7. Within that minishard, show the individual chunks.
+4. **Zoom in** on one shard so it occupies most of the screen. The shard stays as-is in its color. Then the OTHER shards fade out, leaving only the zoomed-in shard visible.
+5. Within that shard, show the minishards as colored sub-regions. The minishard subdivision should reflect the actual `minishard_bits` — e.g., if 6 bits, that means 2^6 = 64 minishards, roughly 4×4×4 within the shard. Color each minishard distinctly.
+6. **Zoom in** on one minishard so it occupies most of the screen. The OTHER minishards fade out, leaving only the zoomed-in minishard.
+7. Within that minishard, show the individual chunks with different colors corresponding to the `preshift_bits`.
 8. End frame: the full hierarchy is labeled — volume → shard → minishard → chunks.
 
 Each zoom-in is a split point for a separate video.
@@ -33,12 +34,12 @@ Each zoom-in is a split point for a separate video.
 **Goal**: Show how 3D chunk coordinates become a single uint64 morton code, and why the compressed interleaving is asymmetric.
 
 **Animation sequence**:
-1. Show volume dimensions, divide by chunk size to get grid, show bits per dimension.
-2. Display three input bit rows (X, Y, Z) color-coded, and an output row.
-3. **Animate with arrows**: For each bit, show an arrow from the source input cell to the output cell, color the output cell, then fade the arrow out. One arrow at a time — keeps it clean while clearly showing the mapping.
-4. Batch-fill the uniform middle section (where all 3 dims still contribute). No arrows needed — the pattern is established.
-5. **Endgame**: Animate slowly when dimensions drop out. Same one-arrow-at-a-time approach. Announce "X exhausted" etc. The arrows are important here to show which dimensions are still contributing consecutive bits.
-6. End frame: complete interleave table with summary pattern shown.
+1. Show volume dimensions, divide by chunk size to get grid, show bits per dimension. **Keep this text visible** throughout — don't fade it out before showing the bit rows.
+2. Display three input bit rows (X, Y, Z) color-coded, and a **single output row**. Use an ellipsis "..." to skip the uniform middle bits (e.g., show bits 0-11, then "...", then bits 24-33). This keeps the output to one line.
+3. **Animate with arrows**: For each visible bit, show an arrow from the source input cell to the output cell, color the output cell, then fade the arrow out. One arrow at a time.
+4. The middle bits (covered by "...") are implied — no animation needed for them.
+5. **Endgame**: Continue showing arrows for ALL bits after the ellipsis, especially as dimensions drop out. This is the key visual — viewers see consecutive same-color bits appearing.
+6. End frame: complete output row with colored cells and the pattern visible. **No subtitle text** at the bottom — let the animation speak for itself.
 
 ### 3 — Bit Allocation (`3-BitAllocationScene`)
 
@@ -49,6 +50,8 @@ Each zoom-in is a split point for a separate video.
 **Layout for labels**: To avoid text overlap:
 - `minishard_bits` label and brace go **above** the bit strip.
 - `preshift_bits` and `shard_bits` labels and braces go **below** the bit strip.
+
+**Pacing**: Each region highlight (shard, minishard, preshift) should be in its own sub-video via `next_section()`. The transitions between highlights are too fast for human comprehension if done in one continuous video. Split so each sub-video ends on the frame showing that region highlighted, giving the presenter time to explain.
 
 **Visual connection to 3D**: Instead of the text pipeline `chunk_coord → morton_code → ...`, show it visually:
 - Below the bit strip, display a small 3D chunk box with its (x, y, z) coordinate.
@@ -63,13 +66,15 @@ Each zoom-in is a split point for a separate video.
 
 **Layout**:
 - Stack bit strips vertically, one per scale (or a subset of scales).
+- **Right-justify strips close to the right edge** of the video screen. The LSB end should be near the right edge so the strips use the available width well.
 - **Right-align (LSB-aligned)**: The preshift and minishard regions stay the same width until the total bits are too few. This makes it visually obvious that as resolution decreases, shard bits shrink from the left while the right side stays stable.
-- Label each row with the scale number and grid size.
+- **Left-align all row labels**: Each row's label (scale number, grid size, bit count) should be aligned to a fixed left edge with padding from the left side of the video. Don't place labels immediately next to each strip's left edge — that creates a staircase look as strips get shorter.
+- **MSB/LSB labels**: Show with the very first scale strip, not after all strips are displayed.
 - Color-code the three regions (shard, minishard, preshift) consistently with Scene 3.
 
 **Animation**:
-1. Show Scale 0's bit strip (from Scene 3).
-2. Transition: "At Scale 1, volume halves..." and show the next strip appearing below, right-aligned, with fewer shard bits on the left.
+1. Show Scale 0's bit strip with MSB/LSB labels and row label.
+2. For each subsequent scale, show the next strip appearing below, right-aligned, with fewer shard bits on the left.
 3. Continue for several scales, showing the shard region shrinking.
 4. At the lower scales, show minishard and preshift also shrinking.
 5. End frame: all strips stacked, right-aligned, showing the clear pattern of decreasing bits from the left.

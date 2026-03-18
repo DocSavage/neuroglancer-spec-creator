@@ -1,19 +1,18 @@
 """Scene 1: Shard Visualization — Volume → Shard → Minishard → Chunks.
 
 The first scene in the tutorial. Shows the spatial hierarchy that
-neuroglancer sharding creates, using a simplified small grid for
-legibility.  Split into 3 sub-videos at each zoom level.
+neuroglancer sharding creates, using a simplified small grid.
+Split into 3 sub-videos at each zoom level.
+
+Zoom sequence: zoom in on one shard so it fills the screen, THEN fade
+out the other shards. Same pattern for minishard zoom.
 """
 
 import math
 
 from manim import (
-    BLUE,
     DEGREES,
     DOWN,
-    GREEN,
-    LEFT,
-    RIGHT,
     UP,
     WHITE,
     YELLOW,
@@ -71,6 +70,15 @@ def _chunk_cube(x, y, z, offset, scale, color, opacity=0.4):
     return cube
 
 
+def _group_center(chunks, offset, sf):
+    """Compute the 3D center of a list of chunk coordinates."""
+    n = max(len(chunks), 1)
+    cx = sum(offset[0] + (x + 0.5) * sf for x, y, z in chunks) / n
+    cy = sum(offset[1] + (y + 0.5) * sf for x, y, z in chunks) / n
+    cz = sum(offset[2] + (z + 0.5) * sf for x, y, z in chunks) / n
+    return [cx, cy, cz]
+
+
 class ShardVisualizationScene(ThreeDScene):
     """3D hierarchy: volume → shards → minishards → chunks."""
 
@@ -80,7 +88,6 @@ class ShardVisualizationScene(ThreeDScene):
         self.scale_idx = scale_idx
 
     def construct(self):
-        # Compute real sharding params for labeling
         size = list(self.volume_size)
         for _ in range(self.scale_idx):
             size = [math.ceil(s / 2) for s in size]
@@ -122,8 +129,8 @@ class ShardVisualizationScene(ThreeDScene):
         self.add_fixed_in_frame_mobjects(title)
 
         info = Text(
-            f"Volume: {size[0]}×{size[1]}×{size[2]}  |  "
-            f"Showing {gx}×{gy}×{gz} chunk grid",
+            f"Volume: {size[0]}x{size[1]}x{size[2]}  |  "
+            f"Showing {gx}x{gy}x{gz} chunk grid",
             font_size=16,
         )
         info.next_to(title, DOWN, buff=0.15)
@@ -131,7 +138,6 @@ class ShardVisualizationScene(ThreeDScene):
 
         self.set_camera_orientation(phi=70 * DEGREES, theta=-45 * DEGREES)
 
-        # Wireframe bounding box
         bbox = _wireframe_box(sx, sy, sz, offset)
         self.play(FadeIn(bbox), run_time=0.5)
 
@@ -145,13 +151,6 @@ class ShardVisualizationScene(ThreeDScene):
             shard_groups[sid] = grp
             self.play(FadeIn(grp), run_time=0.6)
 
-        legend = Text(
-            f"Showing {len(shards_to_show)} of {len(unique_shards)} shards",
-            font_size=14,
-        )
-        legend.to_edge(DOWN, buff=0.3)
-        self.add_fixed_in_frame_mobjects(legend)
-
         # Brief rotation
         self.begin_ambient_camera_rotation(rate=0.3)
         self.wait(3)
@@ -161,32 +160,29 @@ class ShardVisualizationScene(ThreeDScene):
         self.next_section("zoom-shard")
 
         # ──────────────────────────────────────────────
-        # Section 2: Zoom into one shard, show minishards
+        # Section 2: Zoom into one shard, THEN fade others
         # ──────────────────────────────────────────────
-        # Fade out other shards
-        fade_others = [FadeOut(shard_groups[s]) for s in shards_to_show if s != target_shard]
-        if fade_others:
-            self.play(*fade_others, run_time=0.5)
-        self.play(FadeOut(legend), run_time=0.2)
-        self.remove_fixed_in_frame_mobjects(legend)
-
-        # Compute center of target shard for camera zoom
         target_chunks = [(x, y, z) for (x, y, z), s in shard_map.items() if s == target_shard]
-        cx = sum(offset[0] + (x + 0.5) * sf for x, y, z in target_chunks) / len(target_chunks)
-        cy = sum(offset[1] + (y + 0.5) * sf for x, y, z in target_chunks) / len(target_chunks)
-        cz = sum(offset[2] + (z + 0.5) * sf for x, y, z in target_chunks) / len(target_chunks)
+        center = _group_center(target_chunks, offset, sf)
 
+        # Zoom in first so the target shard fills the screen
         self.move_camera(
-            frame_center=[cx, cy, cz],
-            zoom=2.0,
+            frame_center=center,
+            zoom=3.0,
             run_time=1.5,
         )
+
+        # Now fade out the other shards (and the bounding box)
+        fade_others = [FadeOut(shard_groups[s]) for s in shards_to_show if s != target_shard]
+        fade_others.append(FadeOut(bbox))
+        self.play(*fade_others, run_time=0.8)
+        self.wait(0.5)
 
         # Recolor chunks within this shard by minishard ID
         unique_minis = sorted(set(mini_map[c] for c in target_chunks))
         mini_colors = {m: SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
                        for i, m in enumerate(unique_minis)}
-        minis_to_show = unique_minis[:min(4, len(unique_minis))]
+        minis_to_show = unique_minis[:min(6, len(unique_minis))]
         target_mini = minis_to_show[0]
 
         # Replace shard-colored cubes with minishard-colored ones
@@ -199,50 +195,40 @@ class ShardVisualizationScene(ThreeDScene):
                 if mini_map[c] == mid:
                     grp.add(_chunk_cube(*c, offset, sf, mini_colors[mid], opacity=0.5))
             mini_groups[mid] = grp
-            self.play(FadeIn(grp), run_time=0.4)
+            self.play(FadeIn(grp), run_time=0.3)
 
-        mini_label = Text(
-            f"Shard {target_shard}: showing {len(minis_to_show)} minishards",
-            font_size=14,
-        )
-        mini_label.to_edge(DOWN, buff=0.3)
-        self.add_fixed_in_frame_mobjects(mini_label)
         self.wait(2)
-
         self.next_section("zoom-minishard")
 
         # ──────────────────────────────────────────────
-        # Section 3: Zoom into one minishard, show chunks
+        # Section 3: Zoom into one minishard, THEN fade others
         # ──────────────────────────────────────────────
-        fade_minis = [FadeOut(mini_groups[m]) for m in minis_to_show if m != target_mini]
-        if fade_minis:
-            self.play(*fade_minis, run_time=0.5)
-        self.play(FadeOut(mini_label), run_time=0.2)
-        self.remove_fixed_in_frame_mobjects(mini_label)
-
-        # Zoom into minishard
         mini_chunks = [c for c in target_chunks if mini_map[c] == target_mini]
-        mcx = sum(offset[0] + (x + 0.5) * sf for x, y, z in mini_chunks) / max(len(mini_chunks), 1)
-        mcy = sum(offset[1] + (y + 0.5) * sf for x, y, z in mini_chunks) / max(len(mini_chunks), 1)
-        mcz = sum(offset[2] + (z + 0.5) * sf for x, y, z in mini_chunks) / max(len(mini_chunks), 1)
+        mini_center = _group_center(mini_chunks, offset, sf)
 
+        # Zoom in first
         self.move_camera(
-            frame_center=[mcx, mcy, mcz],
-            zoom=3.5,
+            frame_center=mini_center,
+            zoom=6.0,
             run_time=1.5,
         )
 
-        # Replace minishard group with individually colored chunks
+        # Fade out other minishards
+        fade_minis = [FadeOut(mini_groups[m]) for m in minis_to_show if m != target_mini]
+        if fade_minis:
+            self.play(*fade_minis, run_time=0.8)
+
+        # Recolor individual chunks with distinct colors
         self.play(FadeOut(mini_groups[target_mini]), run_time=0.3)
         chunk_cubes = VGroup()
-        for c in mini_chunks:
-            cube = _chunk_cube(*c, offset, sf, "#4488FF", opacity=0.6)
-            chunk_cubes.add(cube)
+        for i, c in enumerate(mini_chunks):
+            color = SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
+            chunk_cubes.add(_chunk_cube(*c, offset, sf, color, opacity=0.6))
         self.play(FadeIn(chunk_cubes), run_time=0.5)
 
         # Hierarchy label
         hierarchy = Text(
-            "volume → shard → minishard → chunks",
+            "volume -> shard -> minishard -> chunks",
             font_size=16, color=YELLOW,
         )
         hierarchy.to_edge(DOWN, buff=0.3)
