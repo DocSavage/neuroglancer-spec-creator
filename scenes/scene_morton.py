@@ -1,7 +1,9 @@
 """Scene 1: Compressed Morton Code Explained.
 
 Shows how chunk coordinates become a single uint64 morton code, and why
-compressed interleaving differs from standard interleaving.
+compressed interleaving differs from standard interleaving.  The animation
+runs through the ENTIRE interleave table so the viewer can see dimensions
+drop out near the end.
 """
 
 import math
@@ -16,19 +18,16 @@ from manim import (
     UP,
     WHITE,
     YELLOW,
-    Arrow,
+    AnimationGroup,
     Create,
     FadeIn,
     FadeOut,
-    GrowArrow,
-    MathTex,
     Rectangle,
     ReplacementTransform,
     Scene,
     SurroundingRectangle,
     Text,
     VGroup,
-    Wait,
     Write,
 )
 
@@ -38,22 +37,11 @@ DIM_COLORS = [BLUE, GREEN, RED]  # X, Y, Z
 DIM_LABELS = ["X", "Y", "Z"]
 
 
-def _make_bit_cell(label: str, color, width=0.45, height=0.45):
-    """Create a single bit cell (rectangle with text)."""
+def _make_bit_cell(label, color, width=0.35, height=0.35, font_size=12):
     rect = Rectangle(width=width, height=height, color=color, fill_opacity=0.3)
-    text = Text(label, font_size=16, color=WHITE)
+    text = Text(str(label), font_size=font_size, color=WHITE)
     text.move_to(rect.get_center())
     return VGroup(rect, text)
-
-
-def _make_bit_row(labels: list[str], color, start_pos, width=0.45):
-    """Create a horizontal row of bit cells."""
-    cells = VGroup()
-    for i, label in enumerate(labels):
-        cell = _make_bit_cell(label, color, width=width)
-        cell.move_to(start_pos + RIGHT * i * (width + 0.05))
-        cells.add(cell)
-    return cells
 
 
 class CompressedMortonScene(Scene):
@@ -65,7 +53,6 @@ class CompressedMortonScene(Scene):
         self.scale_idx = scale_idx
 
     def construct(self):
-        # Compute dimensions for the requested scale
         size = list(self.volume_size)
         for _ in range(self.scale_idx):
             size = [math.ceil(s / 2) for s in size]
@@ -77,162 +64,270 @@ class CompressedMortonScene(Scene):
         total = total_chunk_bits(grid)
         table = interleave_table(grid)
 
-        # Title
+        # --- Title ---
         title = Text("Compressed Morton Code", font_size=36)
         title.to_edge(UP, buff=0.3)
         self.play(Write(title))
 
-        # Step 1: Show volume dimensions
+        # --- Intro: dimensions → grid → bits ---
         vol_text = Text(
             f"Volume: {size[0]} × {size[1]} × {size[2]} voxels",
-            font_size=24,
+            font_size=22,
         )
-        vol_text.next_to(title, DOWN, buff=0.4)
+        vol_text.next_to(title, DOWN, buff=0.35)
         self.play(FadeIn(vol_text))
         self.wait(1)
 
-        # Step 2: Divide by chunk size
         grid_text = Text(
             f"÷ {chunk_size} → Grid: {grid[0]} × {grid[1]} × {grid[2]} chunks",
-            font_size=24,
+            font_size=22,
         )
-        grid_text.next_to(vol_text, DOWN, buff=0.3)
+        grid_text.next_to(vol_text, DOWN, buff=0.25)
         self.play(FadeIn(grid_text))
         self.wait(1)
 
-        # Step 3: Show bits per dimension
         bits_text = Text(
-            f"Bits: X={bpd[0]}, Y={bpd[1]}, Z={bpd[2]}  (total={total})",
-            font_size=24,
+            f"Bits needed: X={bpd[0]}, Y={bpd[1]}, Z={bpd[2]}  (total {total})",
+            font_size=22,
         )
-        bits_text.next_to(grid_text, DOWN, buff=0.3)
+        bits_text.next_to(grid_text, DOWN, buff=0.25)
         self.play(FadeIn(bits_text))
-        self.wait(1)
+        self.wait(1.5)
 
-        # Fade out intro text
         self.play(FadeOut(vol_text), FadeOut(grid_text), FadeOut(bits_text))
 
-        # Step 4: Build the input bit rows
-        # Limit display to manageable width
-        max_display_bits = min(max(bpd), 14)
-        cell_width = min(0.45, 12.0 / (max_display_bits + 2))
+        # --- Layout constants ---
+        # Fit all bits on screen using a multi-row output grid
+        cols_per_row = 18  # output cells per row
+        gap = 0.03
+        cell_w = min(0.35, (13.0 - gap * cols_per_row) / cols_per_row)
+        cell_h = cell_w
+        font = max(8, int(cell_w * 28))
 
+        # --- Input bit rows (top area) ---
         input_rows = VGroup()
-        input_cells = {}  # (dim, bit_pos) -> cell
+        input_cells = {}
 
         for dim in range(3):
-            n_bits = min(bpd[dim], max_display_bits)
-            label = Text(f"{DIM_LABELS[dim]}:", font_size=20, color=DIM_COLORS[dim])
-            y_offset = 1.5 - dim * 0.8
-
-            labels = [f"{DIM_LABELS[dim]}{i}" for i in range(n_bits)]
-            row = _make_bit_row(labels, DIM_COLORS[dim],
-                                start_pos=LEFT * 5 + UP * y_offset,
-                                width=cell_width)
-            label.next_to(row, LEFT, buff=0.2)
-
-            for i in range(n_bits):
-                input_cells[(dim, i)] = row[i]
-
+            n = bpd[dim]
+            y = 1.8 - dim * (cell_h + 0.2)
+            label = Text(
+                f"{DIM_LABELS[dim]} ({n}):",
+                font_size=font + 2,
+                color=DIM_COLORS[dim],
+            )
+            row = VGroup()
+            for i in range(n):
+                c = _make_bit_cell(
+                    f"{DIM_LABELS[dim]}{i}", DIM_COLORS[dim],
+                    width=cell_w, height=cell_h, font_size=font,
+                )
+                c.move_to(LEFT * 5.5 + RIGHT * i * (cell_w + gap) + UP * y)
+                row.add(c)
+                input_cells[(dim, i)] = c
+            label.next_to(row, LEFT, buff=0.15)
             input_rows.add(label, row)
 
         self.play(FadeIn(input_rows))
-        self.wait(1)
-
-        # Step 5: Build output row and animate interleaving
-        output_label = Text("Morton:", font_size=20, color=YELLOW)
-        output_y = -1.5
-        n_output = min(total, max_display_bits * 3)
-
-        output_cells = VGroup()
-        for j in range(n_output):
-            cell = _make_bit_cell(str(j), YELLOW, width=cell_width, height=cell_width)
-            cell.move_to(LEFT * 5 + UP * output_y + RIGHT * j * (cell_width + 0.05))
-            output_cells.add(cell)
-
-        output_label.next_to(output_cells, LEFT, buff=0.2)
-        self.play(FadeIn(output_label), FadeIn(output_cells))
         self.wait(0.5)
 
-        # Animate bits flying from input to output
-        # Show first several bits animated, then fast-forward
-        n_animated = min(len(table), 12)
-        for j in range(n_animated):
+        # --- Output grid (bottom area, multi-row) ---
+        # Use a plain list so ReplacementTransform doesn't break indexing.
+        output_label = Text("Morton output:", font_size=font + 2, color=YELLOW)
+        out_base_y = -0.6
+        output_label.move_to(LEFT * 5.5 + UP * (out_base_y + cell_h * 0.8))
+
+        output_cells = []  # plain list — VGroup used only for initial FadeIn
+        output_group = VGroup()
+        for j in range(total):
+            row_idx = j // cols_per_row
+            col_idx = j % cols_per_row
+            x = -5.5 + col_idx * (cell_w + gap)
+            y = out_base_y - row_idx * (cell_h + gap + 0.05)
+            c = _make_bit_cell(
+                j, YELLOW,
+                width=cell_w, height=cell_h, font_size=font,
+            )
+            c.move_to(RIGHT * x + UP * y)
+            output_cells.append(c)
+            output_group.add(c)
+
+        self.play(FadeIn(output_label), FadeIn(output_group))
+        self.wait(0.5)
+
+        # --- Determine which bits are "interesting" ---
+        # Find where each dimension drops out: the last bit position i
+        # where that dimension contributes.
+        last_pos_for_dim = {}
+        for j, (dim, _) in enumerate(table):
+            last_pos_for_dim[dim] = j
+
+        # The "endgame" starts when the first dimension drops out.
+        # Show the beginning (first cycle), batch the uniform middle,
+        # and animate the endgame one-by-one.
+        min_bpd = min(bpd)
+        # Bits in the uniform region: first min_bpd full X/Y/Z cycles = min_bpd * 3
+        uniform_end = min_bpd * 3
+        # Animate first full cycle (3 bits) individually, batch rest of uniform, then endgame
+        first_slow = min(3 * 3, uniform_end)  # first 3 cycles or all uniform
+
+        # --- Phase 1: animate first few cycles slowly ---
+        phase_label = Text(
+            "All 3 dimensions contribute (X→Y→Z):",
+            font_size=16, color=WHITE,
+        )
+        phase_label.to_edge(DOWN, buff=0.3)
+        self.play(FadeIn(phase_label))
+
+        arrows = VGroup()
+
+        for j in range(min(first_slow, total)):
             dim, bit_pos = table[j]
-            if (dim, bit_pos) in input_cells and j < len(output_cells):
+            source = input_cells[(dim, bit_pos)]
+            target = output_cells[j]
+
+            highlight = SurroundingRectangle(source, color=WHITE, buff=0.03,
+                                             stroke_width=2)
+            new_cell = _make_bit_cell(
+                f"{DIM_LABELS[dim]}{bit_pos}", DIM_COLORS[dim],
+                width=cell_w, height=cell_h, font_size=font,
+            )
+            new_cell.move_to(target.get_center())
+
+            self.play(
+                Create(highlight),
+                ReplacementTransform(target, new_cell),
+                run_time=0.25,
+            )
+            output_cells[j] = new_cell
+            self.play(FadeOut(highlight), run_time=0.1)
+
+        # --- Phase 2: batch-fill the uniform middle ---
+        if uniform_end > first_slow:
+            batch_text = Text(
+                f"… same X→Y→Z pattern for bits {first_slow}–{uniform_end - 1} …",
+                font_size=16, color=YELLOW,
+            )
+            batch_text.to_edge(DOWN, buff=0.6)
+            self.play(FadeIn(batch_text), run_time=0.3)
+
+            batch_anims = []
+            for j in range(first_slow, uniform_end):
+                dim, bit_pos = table[j]
+                target = output_cells[j]
+                new_cell = _make_bit_cell(
+                    f"{DIM_LABELS[dim]}{bit_pos}", DIM_COLORS[dim],
+                    width=cell_w, height=cell_h, font_size=font,
+                )
+                new_cell.move_to(target.get_center())
+                batch_anims.append(ReplacementTransform(target, new_cell))
+                output_cells[j] = new_cell
+
+            self.play(AnimationGroup(*batch_anims), run_time=0.8)
+            self.play(FadeOut(batch_text), run_time=0.3)
+
+        # --- Phase 3: endgame — dimensions drop out one by one ---
+        if uniform_end < total:
+            self.play(FadeOut(phase_label), run_time=0.2)
+
+            # Figure out which dimensions are still active at each step
+            remaining_dims_at = []
+            for j in range(uniform_end, total):
+                active = [d for d in range(3) if last_pos_for_dim[d] >= j]
+                remaining_dims_at.append(active)
+
+            prev_active_set = {0, 1, 2}
+            endgame_label = None
+
+            for idx, j in enumerate(range(uniform_end, total)):
+                dim, bit_pos = table[j]
+                active = set(remaining_dims_at[idx])
+
+                # Announce when a dimension drops out
+                if active != prev_active_set:
+                    dropped = prev_active_set - active
+                    for d in dropped:
+                        drop_msg = Text(
+                            f"{DIM_LABELS[d]} exhausted (all {bpd[d]} bits used)",
+                            font_size=18,
+                            color=DIM_COLORS[d],
+                        )
+                        drop_msg.to_edge(DOWN, buff=0.3)
+                        if endgame_label:
+                            self.play(FadeOut(endgame_label), run_time=0.15)
+                        endgame_label = drop_msg
+                        self.play(FadeIn(drop_msg), run_time=0.3)
+                        self.wait(0.8)
+                    prev_active_set = active
+
+                    # Show which dims remain
+                    active_names = " → ".join(DIM_LABELS[d] for d in sorted(active))
+                    remain_msg = Text(
+                        f"Now only: {active_names}",
+                        font_size=18, color=YELLOW,
+                    )
+                    remain_msg.to_edge(DOWN, buff=0.6)
+                    self.play(FadeOut(endgame_label), FadeIn(remain_msg), run_time=0.3)
+                    endgame_label = remain_msg
+
                 source = input_cells[(dim, bit_pos)]
                 target = output_cells[j]
 
-                # Highlight source
-                highlight = SurroundingRectangle(source, color=WHITE, buff=0.05)
-                self.play(Create(highlight), run_time=0.3)
-
-                # Create arrow from source to target
-                arrow = Arrow(
-                    source.get_bottom(), target.get_top(),
-                    color=DIM_COLORS[dim], buff=0.1,
-                    stroke_width=2,
-                )
-                self.play(GrowArrow(arrow), run_time=0.3)
-
-                # Color the output cell
+                highlight = SurroundingRectangle(source, color=WHITE, buff=0.03,
+                                                 stroke_width=2)
                 new_cell = _make_bit_cell(
-                    f"{DIM_LABELS[dim]}{bit_pos}",
-                    DIM_COLORS[dim], width=cell_width, height=cell_width,
+                    f"{DIM_LABELS[dim]}{bit_pos}", DIM_COLORS[dim],
+                    width=cell_w, height=cell_h, font_size=font,
                 )
                 new_cell.move_to(target.get_center())
+
                 self.play(
+                    Create(highlight),
                     ReplacementTransform(target, new_cell),
-                    FadeOut(highlight),
-                    FadeOut(arrow),
                     run_time=0.3,
                 )
                 output_cells[j] = new_cell
+                self.play(FadeOut(highlight), run_time=0.1)
 
-        # Fast-forward remaining bits
-        if len(table) > n_animated:
-            remaining_text = Text(
-                f"... {len(table) - n_animated} more bits interleaved ...",
-                font_size=20, color=YELLOW,
-            )
-            remaining_text.next_to(output_cells, DOWN, buff=0.5)
-            self.play(FadeIn(remaining_text))
-            self.wait(1)
-            self.play(FadeOut(remaining_text))
+            if endgame_label:
+                self.play(FadeOut(endgame_label), run_time=0.2)
+        else:
+            self.play(FadeOut(phase_label), run_time=0.2)
 
-        # Step 6: Show the key insight
+        # --- Final summary ---
         self.wait(0.5)
-        insight_group = VGroup()
 
-        insight_title = Text("Key Insight", font_size=28, color=YELLOW)
-        insight_title.to_edge(DOWN, buff=1.5)
-
-        insight1 = Text(
-            "Standard morton: always cycles X→Y→Z→X→Y→Z...",
-            font_size=20,
-        )
-        insight1.next_to(insight_title, DOWN, buff=0.3)
-
-        # Build the actual pattern for compressed morton
+        # Build the dimension pattern string showing the full sequence
+        # Group consecutive same-dimension runs for readability
         pattern_parts = []
-        for j, (dim, _) in enumerate(table[:18]):
-            pattern_parts.append(DIM_LABELS[dim])
-        pattern_str = "→".join(pattern_parts) + "→..."
+        i = 0
+        while i < len(table):
+            dim = table[i][0]
+            count = 1
+            while i + count < len(table) and table[i + count][0] == dim:
+                count += 1
+            if count == 1:
+                pattern_parts.append(DIM_LABELS[dim])
+            else:
+                pattern_parts.append(f"{DIM_LABELS[dim]}×{count}")
+            i += count
 
-        insight2 = Text(
-            f"Compressed: {pattern_str}",
-            font_size=18,
+        summary = Text(
+            "Full pattern: " + " → ".join(pattern_parts),
+            font_size=16, color=YELLOW,
         )
-        insight2.next_to(insight1, DOWN, buff=0.2)
+        summary.to_edge(DOWN, buff=0.6)
 
-        insight3 = Text(
-            "Dimensions drop out when they run out of bits!",
-            font_size=20, color=YELLOW,
+        insight = Text(
+            "Dimensions drop out when they run out of bits — the pattern is NOT always X→Y→Z!",
+            font_size=18, color=YELLOW,
         )
-        insight3.next_to(insight2, DOWN, buff=0.2)
+        insight.to_edge(DOWN, buff=0.25)
 
-        insight_group.add(insight_title, insight1, insight2, insight3)
-        self.play(FadeIn(insight_group))
-        self.wait(3)
+        self.play(FadeIn(summary), FadeIn(insight))
+        self.wait(4)
 
-        self.play(FadeOut(VGroup(title, input_rows, output_label, output_cells, insight_group)))
+        self.play(
+            FadeOut(VGroup(title, input_rows, output_label, output_group,
+                           summary, insight))
+        )
