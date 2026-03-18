@@ -35,12 +35,10 @@ Each zoom-in is a split point for a separate video.
 **Animation sequence**:
 1. Show volume dimensions, divide by chunk size to get grid, show bits per dimension.
 2. Display three input bit rows (X, Y, Z) color-coded, and an output row.
-3. **Animate with arrows**: Show arrows from each input bit to its output position (X0 → 0, Y0 → 1, Z0 → 2, X1 → 3, ...). Keep arrows visible so the viewer can see the pattern building up. Animate the first few cycles one-by-one.
-4. Batch-fill the uniform middle section (where all 3 dims still contribute).
-5. **Endgame**: Animate slowly when dimensions drop out. Announce "X exhausted" etc. Show consecutive bits from remaining dimensions — this is the key insight.
-6. End frame: complete interleave table with arrows visible, summary pattern shown.
-
-The arrows from input to output are critical — don't remove them.
+3. **Animate with arrows**: For each bit, show an arrow from the source input cell to the output cell, color the output cell, then fade the arrow out. One arrow at a time — keeps it clean while clearly showing the mapping.
+4. Batch-fill the uniform middle section (where all 3 dims still contribute). No arrows needed — the pattern is established.
+5. **Endgame**: Animate slowly when dimensions drop out. Same one-arrow-at-a-time approach. Announce "X exhausted" etc. The arrows are important here to show which dimensions are still contributing consecutive bits.
+6. End frame: complete interleave table with summary pattern shown.
 
 ### 3 — Bit Allocation (`3-BitAllocationScene`)
 

@@ -1,23 +1,22 @@
-"""Scene 3: 3D Shard Visualization.
+"""Scene 1: Shard Visualization — Volume → Shard → Minishard → Chunks.
 
-Shows what shards look like in 3D space relative to the volume bounding box.
-Uses a simplified small volume to keep the visualization legible.
+The first scene in the tutorial. Shows the spatial hierarchy that
+neuroglancer sharding creates, using a simplified small grid for
+legibility.  Split into 3 sub-videos at each zoom level.
 """
 
 import math
 
 from manim import (
     BLUE,
+    DEGREES,
     DOWN,
     GREEN,
     LEFT,
-    ORANGE,
-    RED,
     RIGHT,
     UP,
     WHITE,
     YELLOW,
-    DEGREES,
     Cube,
     FadeIn,
     FadeOut,
@@ -25,17 +24,55 @@ from manim import (
     Text,
     ThreeDScene,
     VGroup,
-    Write,
 )
 
 from ngspec.morton import compressed_morton_code
 from ngspec.sharding import compute_sharding_params
+from scenes.common import SHARD_CUBE_COLORS
 
-SHARD_COLORS = [BLUE, GREEN, RED, ORANGE, YELLOW, "#FF69B4", "#00CED1", "#FFD700"]
+# Use a small grid so the visualization is legible
+VIZ_GRID = (8, 8, 8)
+SCALE_FACTOR = 0.5
+
+
+def _wireframe_box(sx, sy, sz, offset, color=WHITE, thickness=0.01):
+    """Create a wireframe bounding box from 12 edges."""
+    ox, oy, oz = offset
+    corners = [
+        (ox, oy, oz), (ox + sx, oy, oz), (ox + sx, oy + sy, oz), (ox, oy + sy, oz),
+        (ox, oy, oz + sz), (ox + sx, oy, oz + sz), (ox + sx, oy + sy, oz + sz), (ox, oy + sy, oz + sz),
+    ]
+    pairs = [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    ]
+    edges = VGroup()
+    for i, j in pairs:
+        edges.add(Line3D(
+            start=list(corners[i]), end=list(corners[j]),
+            color=color, thickness=thickness,
+        ))
+    return edges
+
+
+def _chunk_cube(x, y, z, offset, scale, color, opacity=0.4):
+    """Create a single chunk cube at grid position (x, y, z)."""
+    ox, oy, oz = offset
+    cube = Cube(
+        side_length=scale * 0.85,
+        fill_color=color, fill_opacity=opacity, stroke_width=0.5,
+    )
+    cube.move_to([
+        ox + (x + 0.5) * scale,
+        oy + (y + 0.5) * scale,
+        oz + (z + 0.5) * scale,
+    ])
+    return cube
 
 
 class ShardVisualizationScene(ThreeDScene):
-    """3D visualization of shard spatial extent in a volume."""
+    """3D hierarchy: volume → shards → minishards → chunks."""
 
     def __init__(self, size=(94088, 78317, 134576), scale_idx=0, **kwargs):
         super().__init__(**kwargs)
@@ -43,129 +80,172 @@ class ShardVisualizationScene(ThreeDScene):
         self.scale_idx = scale_idx
 
     def construct(self):
+        # Compute real sharding params for labeling
         size = list(self.volume_size)
         for _ in range(self.scale_idx):
             size = [math.ceil(s / 2) for s in size]
-
         params = compute_sharding_params(tuple(size))
-
-        # Use a simplified grid for visualization (max 8 chunks per dim)
-        viz_grid = tuple(min(g, 8) for g in params["grid_size"])
-        scale_factor = 0.6  # size of each cube unit
-
-        # Title (shown as fixed-in-frame text)
-        title = Text(f"3D Shard Visualization — Scale {self.scale_idx}", font_size=28)
-        title.to_edge(UP, buff=0.3)
-        self.add_fixed_in_frame_mobjects(title)
-        self.play(Write(title))
-
-        info = Text(
-            f"Grid: {params['grid_size'][0]}×{params['grid_size'][1]}×{params['grid_size'][2]}  "
-            f"(showing {viz_grid[0]}×{viz_grid[1]}×{viz_grid[2]})",
-            font_size=18,
-        )
-        info.next_to(title, DOWN, buff=0.2)
-        self.add_fixed_in_frame_mobjects(info)
-        self.play(FadeIn(info))
-
-        # Set camera
-        self.set_camera_orientation(phi=70 * DEGREES, theta=-45 * DEGREES)
-
-        # Draw wireframe bounding box
-        gx, gy, gz = viz_grid
-        sx, sy, sz = gx * scale_factor, gy * scale_factor, gz * scale_factor
-        offset_x, offset_y, offset_z = -sx / 2, -sy / 2, -sz / 2
-
-        edges = []
-        corners = [
-            (0, 0, 0), (sx, 0, 0), (sx, sy, 0), (0, sy, 0),
-            (0, 0, sz), (sx, 0, sz), (sx, sy, sz), (0, sy, sz),
-        ]
-        edge_pairs = [
-            (0, 1), (1, 2), (2, 3), (3, 0),
-            (4, 5), (5, 6), (6, 7), (7, 4),
-            (0, 4), (1, 5), (2, 6), (3, 7),
-        ]
-        for i, j in edge_pairs:
-            c1, c2 = corners[i], corners[j]
-            line = Line3D(
-                start=[c1[0] + offset_x, c1[1] + offset_y, c1[2] + offset_z],
-                end=[c2[0] + offset_x, c2[1] + offset_y, c2[2] + offset_z],
-                color=WHITE,
-                thickness=0.01,
-            )
-            edges.append(line)
-
-        bbox = VGroup(*edges)
-        self.play(FadeIn(bbox))
-        self.wait(0.5)
-
-        # Compute shard IDs for each chunk in the viz grid and color them
         pre = params["preshift_bits"]
         mini = params["minishard_bits"]
         shard_bits = params["shard_bits"]
         grid_full = params["grid_size"]
 
-        # Build shard map for viz grid
+        gx, gy, gz = VIZ_GRID
+        sf = SCALE_FACTOR
+        sx, sy, sz = gx * sf, gy * sf, gz * sf
+        offset = (-sx / 2, -sy / 2, -sz / 2)
+
+        # Compute shard and minishard IDs for every chunk in viz grid
         shard_map = {}
-        for x in range(viz_grid[0]):
-            for y in range(viz_grid[1]):
-                for z in range(viz_grid[2]):
+        mini_map = {}
+        for x in range(gx):
+            for y in range(gy):
+                for z in range(gz):
                     code = compressed_morton_code((x, y, z), grid_full)
                     shifted = code >> pre
-                    shard_id = (shifted >> mini) & ((1 << shard_bits) - 1) if shard_bits > 0 else 0
-                    shard_map[(x, y, z)] = shard_id
+                    mid = shifted & ((1 << mini) - 1) if mini > 0 else 0
+                    sid = (shifted >> mini) & ((1 << shard_bits) - 1) if shard_bits > 0 else 0
+                    shard_map[(x, y, z)] = sid
+                    mini_map[(x, y, z)] = mid
 
-        # Find unique shards and assign colors
         unique_shards = sorted(set(shard_map.values()))
-        shard_color_map = {
-            sid: SHARD_COLORS[i % len(SHARD_COLORS)]
-            for i, sid in enumerate(unique_shards)
-        }
-
-        # Show a few shards at a time (first 4 unique shard IDs)
+        shard_colors = {s: SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
+                        for i, s in enumerate(unique_shards)}
         shards_to_show = unique_shards[:min(4, len(unique_shards))]
-        cubes = VGroup()
+        target_shard = shards_to_show[0]
 
-        for sid in shards_to_show:
-            shard_cubes = VGroup()
-            for (x, y, z), s in shard_map.items():
-                if s == sid:
-                    cube = Cube(
-                        side_length=scale_factor * 0.85,
-                        fill_color=shard_color_map[sid],
-                        fill_opacity=0.4,
-                        stroke_width=0.5,
-                    )
-                    cube.move_to([
-                        offset_x + (x + 0.5) * scale_factor,
-                        offset_y + (y + 0.5) * scale_factor,
-                        offset_z + (z + 0.5) * scale_factor,
-                    ])
-                    shard_cubes.add(cube)
+        # ──────────────────────────────────────────────
+        # Section 1: Full volume with shards
+        # ──────────────────────────────────────────────
+        title = Text("Shard Visualization", font_size=28)
+        title.to_edge(UP, buff=0.3)
+        self.add_fixed_in_frame_mobjects(title)
 
-            if len(shard_cubes) > 0:
-                cubes.add(shard_cubes)
-                self.play(FadeIn(shard_cubes), run_time=0.8)
-
-        self.wait(1)
-
-        # Rotate camera to show 3D structure
-        self.begin_ambient_camera_rotation(rate=0.3)
-        self.wait(4)
-        self.stop_ambient_camera_rotation()
-
-        # Legend
-        legend_items = []
-        for sid in shards_to_show:
-            legend_items.append(f"Shard {sid}")
-        legend_text = Text(
-            f"Showing {len(shards_to_show)} of {len(unique_shards)} shards",
+        info = Text(
+            f"Volume: {size[0]}×{size[1]}×{size[2]}  |  "
+            f"Showing {gx}×{gy}×{gz} chunk grid",
             font_size=16,
         )
-        legend_text.to_edge(DOWN, buff=0.3)
-        self.add_fixed_in_frame_mobjects(legend_text)
-        self.play(FadeIn(legend_text))
+        info.next_to(title, DOWN, buff=0.15)
+        self.add_fixed_in_frame_mobjects(info)
+
+        self.set_camera_orientation(phi=70 * DEGREES, theta=-45 * DEGREES)
+
+        # Wireframe bounding box
+        bbox = _wireframe_box(sx, sy, sz, offset)
+        self.play(FadeIn(bbox), run_time=0.5)
+
+        # Color-code shard groups
+        shard_groups = {}
+        for sid in shards_to_show:
+            grp = VGroup()
+            for (x, y, z), s in shard_map.items():
+                if s == sid:
+                    grp.add(_chunk_cube(x, y, z, offset, sf, shard_colors[sid]))
+            shard_groups[sid] = grp
+            self.play(FadeIn(grp), run_time=0.6)
+
+        legend = Text(
+            f"Showing {len(shards_to_show)} of {len(unique_shards)} shards",
+            font_size=14,
+        )
+        legend.to_edge(DOWN, buff=0.3)
+        self.add_fixed_in_frame_mobjects(legend)
+
+        # Brief rotation
+        self.begin_ambient_camera_rotation(rate=0.3)
+        self.wait(3)
+        self.stop_ambient_camera_rotation()
+        self.wait(1)
+
+        self.next_section("zoom-shard")
+
+        # ──────────────────────────────────────────────
+        # Section 2: Zoom into one shard, show minishards
+        # ──────────────────────────────────────────────
+        # Fade out other shards
+        fade_others = [FadeOut(shard_groups[s]) for s in shards_to_show if s != target_shard]
+        if fade_others:
+            self.play(*fade_others, run_time=0.5)
+        self.play(FadeOut(legend), run_time=0.2)
+        self.remove_fixed_in_frame_mobjects(legend)
+
+        # Compute center of target shard for camera zoom
+        target_chunks = [(x, y, z) for (x, y, z), s in shard_map.items() if s == target_shard]
+        cx = sum(offset[0] + (x + 0.5) * sf for x, y, z in target_chunks) / len(target_chunks)
+        cy = sum(offset[1] + (y + 0.5) * sf for x, y, z in target_chunks) / len(target_chunks)
+        cz = sum(offset[2] + (z + 0.5) * sf for x, y, z in target_chunks) / len(target_chunks)
+
+        self.move_camera(
+            frame_center=[cx, cy, cz],
+            zoom=2.0,
+            run_time=1.5,
+        )
+
+        # Recolor chunks within this shard by minishard ID
+        unique_minis = sorted(set(mini_map[c] for c in target_chunks))
+        mini_colors = {m: SHARD_CUBE_COLORS[i % len(SHARD_CUBE_COLORS)]
+                       for i, m in enumerate(unique_minis)}
+        minis_to_show = unique_minis[:min(4, len(unique_minis))]
+        target_mini = minis_to_show[0]
+
+        # Replace shard-colored cubes with minishard-colored ones
+        self.play(FadeOut(shard_groups[target_shard]), run_time=0.3)
+
+        mini_groups = {}
+        for mid in minis_to_show:
+            grp = VGroup()
+            for c in target_chunks:
+                if mini_map[c] == mid:
+                    grp.add(_chunk_cube(*c, offset, sf, mini_colors[mid], opacity=0.5))
+            mini_groups[mid] = grp
+            self.play(FadeIn(grp), run_time=0.4)
+
+        mini_label = Text(
+            f"Shard {target_shard}: showing {len(minis_to_show)} minishards",
+            font_size=14,
+        )
+        mini_label.to_edge(DOWN, buff=0.3)
+        self.add_fixed_in_frame_mobjects(mini_label)
         self.wait(2)
 
-        self.play(FadeOut(VGroup(bbox, cubes)), FadeOut(title), FadeOut(info), FadeOut(legend_text))
+        self.next_section("zoom-minishard")
+
+        # ──────────────────────────────────────────────
+        # Section 3: Zoom into one minishard, show chunks
+        # ──────────────────────────────────────────────
+        fade_minis = [FadeOut(mini_groups[m]) for m in minis_to_show if m != target_mini]
+        if fade_minis:
+            self.play(*fade_minis, run_time=0.5)
+        self.play(FadeOut(mini_label), run_time=0.2)
+        self.remove_fixed_in_frame_mobjects(mini_label)
+
+        # Zoom into minishard
+        mini_chunks = [c for c in target_chunks if mini_map[c] == target_mini]
+        mcx = sum(offset[0] + (x + 0.5) * sf for x, y, z in mini_chunks) / max(len(mini_chunks), 1)
+        mcy = sum(offset[1] + (y + 0.5) * sf for x, y, z in mini_chunks) / max(len(mini_chunks), 1)
+        mcz = sum(offset[2] + (z + 0.5) * sf for x, y, z in mini_chunks) / max(len(mini_chunks), 1)
+
+        self.move_camera(
+            frame_center=[mcx, mcy, mcz],
+            zoom=3.5,
+            run_time=1.5,
+        )
+
+        # Replace minishard group with individually colored chunks
+        self.play(FadeOut(mini_groups[target_mini]), run_time=0.3)
+        chunk_cubes = VGroup()
+        for c in mini_chunks:
+            cube = _chunk_cube(*c, offset, sf, "#4488FF", opacity=0.6)
+            chunk_cubes.add(cube)
+        self.play(FadeIn(chunk_cubes), run_time=0.5)
+
+        # Hierarchy label
+        hierarchy = Text(
+            "volume → shard → minishard → chunks",
+            font_size=16, color=YELLOW,
+        )
+        hierarchy.to_edge(DOWN, buff=0.3)
+        self.add_fixed_in_frame_mobjects(hierarchy)
+
+        self.wait(3)  # Final frame stays

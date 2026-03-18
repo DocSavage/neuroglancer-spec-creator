@@ -1,38 +1,31 @@
-"""Scene 4: Multi-Scale Walkthrough.
+"""Scene 4: Multi-Scale Bit Comparison.
 
-Ties it all together — shows how sharding parameters change across
-resolution scales with a summary table and the final JSON output.
+Shows how the bit allocation changes across resolution scales by stacking
+LSB-aligned colored bit strips.  Shard bits visibly shrink from the left
+while preshift and minishard stay stable on the right.
 """
 
-import json
 import math
 
 from manim import (
-    BLUE,
     DOWN,
-    GREEN,
     LEFT,
-    RED,
     RIGHT,
     UP,
     WHITE,
     YELLOW,
     FadeIn,
-    FadeOut,
     Scene,
-    Table,
     Text,
     VGroup,
-    Write,
 )
 
-from ngspec.morton import bits_per_dimension
 from ngspec.sharding import compute_sharding_params
-from ngspec.spec_generator import generate_spec
+from scenes.common import instant_title, make_colored_bit_strip
 
 
-class MultiscaleWalkthroughScene(Scene):
-    """Animate the multi-scale sharding parameter breakdown."""
+class MultiscaleBitComparison(Scene):
+    """Stack LSB-aligned bit strips to show shard bits shrinking across scales."""
 
     def __init__(self, size=(94088, 78317, 134576), num_scales=11, **kwargs):
         super().__init__(**kwargs)
@@ -40,146 +33,99 @@ class MultiscaleWalkthroughScene(Scene):
         self.num_scales = num_scales
 
     def construct(self):
-        title = Text("Multi-Scale Sharding Parameters", font_size=36)
-        title.to_edge(UP, buff=0.3)
-        self.play(Write(title))
+        title = instant_title(self, "Multi-Scale Bit Comparison")
 
-        # Build data for all scales
+        # ── Compute params for all scales ──
         rows = []
         current_size = list(self.volume_size)
-
         for i in range(self.num_scales):
             params = compute_sharding_params(tuple(current_size))
-            bpd = bits_per_dimension(params["grid_size"])
             rows.append({
                 "scale": i,
                 "size": tuple(current_size),
                 "grid": params["grid_size"],
-                "bpd": bpd,
-                "total": params["total_chunk_bits"],
                 "shard": params["shard_bits"],
                 "mini": params["minishard_bits"],
                 "pre": params["preshift_bits"],
-                "num_shards": params["num_shards"],
+                "total": params["total_chunk_bits"],
             })
             current_size = [math.ceil(s / 2) for s in current_size]
 
-        # Show scales one at a time, then build the summary table
-        # First show a few scales animated
-        n_animated = min(4, self.num_scales)
-        prev_group = None
+        # ── Layout constants ──
+        max_total = rows[0]["total"]
+        # Fit the widest strip (scale 0) within frame
+        cell_w = min(0.28, 11.0 / (max_total + 1))
+        cell_h = 0.25
+        gap = 0.02
+        row_spacing = cell_h + 0.35
+        start_y = 2.2
 
-        for i in range(n_animated):
+        # Right edge: all strips align here (LSB = right side)
+        right_x = 4.5
+
+        # ── Show strips one at a time ──
+        strips = []
+        labels = []
+
+        # Limit to scales that fit on screen
+        max_rows = min(self.num_scales, int((start_y + 3.5) / row_spacing))
+
+        for i in range(max_rows):
             r = rows[i]
-            scale_group = VGroup()
+            y = start_y - i * row_spacing
 
-            scale_title = Text(f"Scale {i}", font_size=28, color=YELLOW)
-            scale_title.next_to(title, DOWN, buff=0.5)
-
-            size_text = Text(
-                f"Size: {r['size'][0]} × {r['size'][1]} × {r['size'][2]}",
-                font_size=22,
+            # Build strip
+            strip, shard_cells, mini_cells, pre_cells = make_colored_bit_strip(
+                r["shard"], r["mini"], r["pre"],
+                cell_width=cell_w, cell_height=cell_h,
+                font_size=max(7, int(cell_w * 26)), gap=gap,
             )
-            size_text.next_to(scale_title, DOWN, buff=0.3)
 
-            grid_text = Text(
-                f"Grid: {r['grid'][0]} × {r['grid'][1]} × {r['grid'][2]}",
-                font_size=22,
+            # Right-align: position so right edge of strip aligns with right_x
+            strip.move_to(UP * y)
+            if len(strip) > 0:
+                offset = right_x - strip.get_right()[0]
+                strip.shift(RIGHT * offset)
+
+            # Row label on the left
+            grid_str = f"{r['grid'][0]}x{r['grid'][1]}x{r['grid'][2]}"
+            label = Text(
+                f"Scale {i}  ({grid_str})  {r['total']}b",
+                font_size=11,
             )
-            grid_text.next_to(size_text, DOWN, buff=0.2)
-
-            bits_text = Text(
-                f"Bits: {r['bpd'][0]}+{r['bpd'][1]}+{r['bpd'][2]} = {r['total']}",
-                font_size=22,
-            )
-            bits_text.next_to(grid_text, DOWN, buff=0.2)
-
-            alloc_text = Text(
-                f"shard={r['shard']}  mini={r['mini']}  pre={r['pre']}  →  {r['num_shards']:,} shards",
-                font_size=22,
-            )
-            alloc_text.next_to(bits_text, DOWN, buff=0.2)
-
-            # Color the allocation
-            shard_colored = Text(f"shard={r['shard']}", font_size=22, color=RED)
-            mini_colored = Text(f"mini={r['mini']}", font_size=22, color=YELLOW)
-            pre_colored = Text(f"pre={r['pre']}", font_size=22, color=GREEN)
-
-            scale_group.add(scale_title, size_text, grid_text, bits_text, alloc_text)
-
-            if prev_group:
-                self.play(FadeOut(prev_group), FadeIn(scale_group), run_time=0.8)
+            label.move_to(UP * y)
+            if len(strip) > 0:
+                label.next_to(strip, LEFT, buff=0.2)
             else:
-                self.play(FadeIn(scale_group))
+                label.move_to(LEFT * 3 + UP * y)
 
-            self.wait(1.5)
-            prev_group = scale_group
+            strips.append(strip)
+            labels.append(label)
 
-        if prev_group:
-            self.play(FadeOut(prev_group))
+            if i == 0:
+                self.play(FadeIn(strip), FadeIn(label), run_time=0.6)
+                self.wait(0.8)
+            elif i <= 3:
+                self.play(FadeIn(strip), FadeIn(label), run_time=0.4)
+                self.wait(0.4)
+            else:
+                self.play(FadeIn(strip), FadeIn(label), run_time=0.2)
 
-        # Build summary table
-        header = ["Scale", "Bits", "Shard", "Mini", "Pre", "#Shards"]
-        table_data = []
-        for r in rows:
-            table_data.append([
-                str(r["scale"]),
-                f"{r['bpd'][0]}+{r['bpd'][1]}+{r['bpd'][2]}={r['total']}",
-                str(r["shard"]),
-                str(r["mini"]),
-                str(r["pre"]),
-                f"{r['num_shards']:,}",
-            ])
+        # ── Column legend ──
+        if max_rows > 0 and len(strips[0]) > 0:
+            # MSB / LSB markers aligned with scale 0 strip
+            msb = Text("MSB", font_size=10, color=WHITE)
+            lsb = Text("LSB", font_size=10, color=WHITE)
+            msb.next_to(strips[0], UP, buff=0.08).align_to(strips[0], LEFT)
+            lsb.next_to(strips[0], UP, buff=0.08).align_to(strips[0], RIGHT)
+            self.play(FadeIn(msb), FadeIn(lsb), run_time=0.3)
 
-        # Manim Table can be large; limit if needed
-        max_rows = min(len(table_data), 11)
-        display_data = table_data[:max_rows]
-
-        table = Table(
-            display_data,
-            col_labels=[Text(h, font_size=16) for h in header],
-            include_outer_lines=True,
-            line_config={"stroke_width": 1},
-            element_to_mobject_config={"font_size": 14},
+        # ── Final insight ──
+        insight = Text(
+            "Shard bits shrink from the left as resolution decreases",
+            font_size=16, color=YELLOW,
         )
-        table.scale(0.7)
-        table.next_to(title, DOWN, buff=0.4)
+        insight.to_edge(DOWN, buff=0.2)
+        self.play(FadeIn(insight), run_time=0.4)
 
-        self.play(FadeIn(table))
-        self.wait(3)
-
-        # Show total shards
-        total_shards = sum(r["num_shards"] for r in rows)
-        total_text = Text(
-            f"Total shard files across all scales: {total_shards:,}",
-            font_size=22, color=YELLOW,
-        )
-        total_text.next_to(table, DOWN, buff=0.4)
-        self.play(FadeIn(total_text))
-        self.wait(2)
-
-        # Final: show JSON output preview
-        self.play(FadeOut(table), FadeOut(total_text))
-
-        json_title = Text("Output: neuroglancer_spec.json", font_size=24, color=GREEN)
-        json_title.next_to(title, DOWN, buff=0.5)
-
-        spec = generate_spec(
-            self.volume_size,
-            num_scales=self.num_scales,
-        )
-        # Show abbreviated JSON
-        json_str = json.dumps(spec, indent=2)
-        lines = json_str.split("\n")
-        preview_lines = lines[:12] + ["  ..."] + lines[-3:]
-        json_preview = Text(
-            "\n".join(preview_lines),
-            font_size=12,
-            font="Monospace",
-        )
-        json_preview.next_to(json_title, DOWN, buff=0.3)
-
-        self.play(FadeIn(json_title), FadeIn(json_preview))
-        self.wait(4)
-
-        self.play(FadeOut(VGroup(title, json_title, json_preview)))
+        self.wait(3)  # Final frame stays
