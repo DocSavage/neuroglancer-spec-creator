@@ -7,11 +7,27 @@ platforms = ["linux-64"]
 python = ">=3.10,<3.13"
 
 [pypi-dependencies]
-manim = ">=0.18.0"
 click = ">=8.1.0"
 pytest = ">=8.0"
 
+[feature.viz.dependencies]
+pango = ">=1.50"
+cairo = ">=1.16"
+pkg-config = "*"
+ffmpeg = ">=5.0"
+freetype = ">=2.10"
+harfbuzz = ">=2.0"
+
+[feature.viz.pypi-dependencies]
+manim = ">=0.18.0"
+
+[environments]
+default = { features = [], solve-group = "default" }
+viz = { features = ["viz"], solve-group = "default" }
+
 [tasks]
 generate = "python cli.py generate"
-animate = "python cli.py animate"
 test = "pytest tests/ -v"
+
+[feature.viz.tasks]
+animate = "python cli.py animate"
