@@ -1,55 +1,61 @@
 """Manim scene definitions for neuroglancer sharding visualization."""
 
-import math
-
-from ngspec.morton import bits_per_dimension, total_chunk_bits
-from ngspec.sharding import compute_sharding_params
-
 
 def render_scene(size, scales, scene, scale_idx, preview, quality):
     """Render the requested Manim scene(s)."""
-    from manim import config, tempconfig
+    scene_map = {
+        "morton": _render_morton,
+        "bits": _render_bits,
+        "shards": _render_shards,
+        "multiscale": _render_multiscale,
+    }
 
     renderer = "opengl" if preview else "cairo"
+
+    if scene == "all":
+        for name in ["morton", "bits", "shards", "multiscale"]:
+            scene_map[name](size, scales, scale_idx, quality, renderer, preview)
+    else:
+        scene_map[scene](size, scales, scale_idx, quality, renderer, preview)
+
+
+def _render_with_config(scene_cls, quality, renderer, preview, **kwargs):
+    """Render a single scene with an isolated manim config.
+
+    Each scene gets its own tempconfig so that manim's file writer
+    produces a separate output file per scene class.
+    """
+    from manim import tempconfig
 
     with tempconfig({
         "quality": quality,
         "renderer": renderer,
         "preview": preview,
+        "output_file": scene_cls.__name__,
     }):
-        scene_map = {
-            "morton": _render_morton,
-            "bits": _render_bits,
-            "shards": _render_shards,
-            "multiscale": _render_multiscale,
-        }
-
-        if scene == "all":
-            for name in ["morton", "bits", "shards", "multiscale"]:
-                scene_map[name](size, scales, scale_idx)
-        else:
-            scene_map[scene](size, scales, scale_idx)
+        scene = scene_cls(**kwargs)
+        scene.render()
 
 
-def _render_morton(size, scales, scale_idx):
+def _render_morton(size, scales, scale_idx, quality, renderer, preview):
     from scenes.scene_morton import CompressedMortonScene
-    scene = CompressedMortonScene(size=size, scale_idx=scale_idx)
-    scene.render()
+    _render_with_config(CompressedMortonScene, quality, renderer, preview,
+                        size=size, scale_idx=scale_idx)
 
 
-def _render_bits(size, scales, scale_idx):
+def _render_bits(size, scales, scale_idx, quality, renderer, preview):
     from scenes.scene_bits import BitAllocationScene
-    scene = BitAllocationScene(size=size, scale_idx=scale_idx)
-    scene.render()
+    _render_with_config(BitAllocationScene, quality, renderer, preview,
+                        size=size, scale_idx=scale_idx)
 
 
-def _render_shards(size, scales, scale_idx):
+def _render_shards(size, scales, scale_idx, quality, renderer, preview):
     from scenes.scene_shards import ShardVisualizationScene
-    scene = ShardVisualizationScene(size=size, scale_idx=scale_idx)
-    scene.render()
+    _render_with_config(ShardVisualizationScene, quality, renderer, preview,
+                        size=size, scale_idx=scale_idx)
 
 
-def _render_multiscale(size, scales, scale_idx):
+def _render_multiscale(size, scales, scale_idx, quality, renderer, preview):
     from scenes.scene_multiscale import MultiscaleWalkthroughScene
-    scene = MultiscaleWalkthroughScene(size=size, num_scales=scales)
-    scene.render()
+    _render_with_config(MultiscaleWalkthroughScene, quality, renderer, preview,
+                        size=size, num_scales=scales)
