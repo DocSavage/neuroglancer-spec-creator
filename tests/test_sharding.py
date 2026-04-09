@@ -1,6 +1,9 @@
 """Tests for sharding bit parameter computation.
 
-Ground truth: DVID repo mcns-ng-specs.json (male CNS dataset, 11 scales).
+Bit calculation uses tensorstore's formula: bit_width(grid_size - 1).
+Sharding params for MCNS dataset are cross-checked against DVID's
+mcns-ng-specs.json (sharding parameters only — the DVID file uses
+incorrect data_type/encoding for segmentation).
 """
 
 import json
@@ -8,7 +11,8 @@ import json
 from ngspec.sharding import compute_sharding_params
 
 
-# Ground truth from /home/katzw/go-code/src/github.com/janelia-flyem/dvid/test_data/mcns-ng-specs.json
+# Sharding params for MCNS dataset (verified against tensorstore invariants).
+# Cross-checked with DVID mcns-ng-specs.json sharding parameters.
 # Each entry: (volume_size, expected_shard_bits, expected_minishard_bits, expected_preshift_bits)
 MCNS_GROUND_TRUTH = [
     ((94088, 78317, 134576), 19, 6, 9),   # scale 0
@@ -26,7 +30,7 @@ MCNS_GROUND_TRUTH = [
 
 
 class TestMcnsGroundTruth:
-    """Verify sharding params match DVID's known-good spec for all 11 scales."""
+    """Verify sharding params for all 11 MCNS scales."""
 
     def test_all_scales(self):
         for i, (size, exp_shard, exp_mini, exp_pre) in enumerate(MCNS_GROUND_TRUTH):

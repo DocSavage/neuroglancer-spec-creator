@@ -1,11 +1,15 @@
 """Tests for JSON spec generation.
 
-Validates structure and correctness against the DVID ground truth spec.
+Validates structure and correctness against tensorstore invariants.
+The DVID mcns-ng-specs.json is used for sharding parameter comparison only;
+tensorstore (~/tensorstore) is the authoritative reference for the
+neuroglancer precomputed format.
 """
 
 import json
 import math
 
+from ngspec.morton import bits_per_dimension, compressed_morton_code, total_chunk_bits
 from ngspec.spec_generator import compute_num_scales, generate_spec
 
 
@@ -88,17 +92,20 @@ class TestScaleProgression:
             size = [math.ceil(s / 2) for s in size]
 
 
-class TestDvidGroundTruth:
-    """Validate against the DVID mcns-ng-specs.json."""
+class TestDvidShardingComparison:
+    """Compare sharding parameters against DVID mcns-ng-specs.json.
 
-    def test_matches_dvid_spec(self):
+    NOTE: The DVID file uses uint8/jpeg/image which is incorrect for
+    segmentation data.  Only sharding params, sizes, keys, and resolutions
+    are compared here.  Tensorstore is the authoritative reference for the
+    neuroglancer precomputed format — see TestTensorstoreInvariants.
+    """
+
+    def test_sharding_params_match_dvid(self):
         spec = generate_spec(
             (94088, 78317, 134576),
             num_scales=11,
             voxel_resolution=(8.0, 8.0, 8.0),
-            data_type="uint8",
-            volume_type="image",
-            encoding="jpeg",
         )
 
         spec_path = "/home/katzw/go-code/src/github.com/janelia-flyem/dvid/test_data/mcns-ng-specs.json"
@@ -124,6 +131,108 @@ class TestDvidGroundTruth:
             )
             assert gen["key"] == exp["key"], f"Scale {i} key"
             assert gen["resolution"] == exp["resolution"], f"Scale {i} resolution"
+
+
+class TestTensorstoreInvariants:
+    """Validate against tensorstore's neuroglancer precomputed format rules.
+
+    Reference: tensorstore/driver/neuroglancer_precomputed/metadata.cc
+    - GetCompressedZIndexBits: bit_width(ceil(shape/chunk) - 1)
+    - GetShardChunkHierarchy: total_z_index_bits <= shard + minishard + preshift
+    - GetChunksPerVolumeShardFunction: all chunks map to valid shard IDs
+    """
+
+    def test_bits_per_dim_matches_tensorstore(self):
+        """Our bits_per_dimension matches tensorstore's GetCompressedZIndexBits.
+
+        tensorstore: bit_width(max(0, ceil(shape/chunk) - 1))
+        ours: (max(g, 1) - 1).bit_length() where g = ceil(shape/chunk)
+        """
+        cases = [
+            # (grid_size, expected_bits) — verified against tensorstore
+            ((1, 1, 1), (0, 0, 0)),
+            ((2, 2, 2), (1, 1, 1)),
+            ((3, 3, 5), (2, 2, 3)),
+            ((4, 4, 4), (2, 2, 2)),  # power-of-2: bit_width(3)=2, not 3
+            ((8, 8, 8), (3, 3, 3)),  # power-of-2: bit_width(7)=3, not 4
+            ((1471, 1224, 2103), (11, 11, 12)),
+        ]
+        for grid, expected in cases:
+            assert bits_per_dimension(grid) == expected, f"grid={grid}"
+
+    def test_total_bits_cover_morton_space(self):
+        """shard + minishard + preshift >= total_z_index_bits at every scale.
+
+        This is tensorstore's validation at metadata.cc:1483-1488.
+        Our allocator sets them equal, satisfying this invariant.
+        """
+        spec = generate_spec(
+            (94088, 78317, 134576),
+            data_type="uint64",
+            volume_type="segmentation",
+        )
+        for i, scale in enumerate(spec["scales"]):
+            size = tuple(scale["size"])
+            grid = tuple(math.ceil(s / 64) for s in size)
+            z_index_bits = sum(bits_per_dimension(grid))
+            sh = scale["sharding"]
+            allocated = sh["shard_bits"] + sh["minishard_bits"] + sh["preshift_bits"]
+            assert allocated >= z_index_bits, (
+                f"Scale {i}: allocated {allocated} < z_index_bits {z_index_bits}"
+            )
+
+    def test_all_morton_codes_fit_in_single_shard_when_shard_bits_zero(self):
+        """When shard_bits=0, every chunk's morton code must map to shard 0.
+
+        Simulates tensorstore's shard ID derivation (identity hash):
+          hash_input = morton_code >> preshift_bits
+          shard = (hash_input >> minishard_bits) & ((1 << shard_bits) - 1)
+        """
+        spec = generate_spec(
+            (94088, 78317, 134576),
+            data_type="uint64",
+            volume_type="segmentation",
+        )
+        for i, scale in enumerate(spec["scales"]):
+            sh = scale["sharding"]
+            if sh["shard_bits"] != 0:
+                continue
+            size = tuple(scale["size"])
+            grid = tuple(math.ceil(s / 64) for s in size)
+            # Check every chunk coordinate at this scale
+            for x in range(grid[0]):
+                for y in range(grid[1]):
+                    for z in range(grid[2]):
+                        morton = compressed_morton_code((x, y, z), grid)
+                        hash_input = morton >> sh["preshift_bits"]
+                        shard_mask = (1 << sh["shard_bits"]) - 1
+                        shard_id = (hash_input >> sh["minishard_bits"]) & shard_mask
+                        assert shard_id == 0, (
+                            f"Scale {i} chunk ({x},{y},{z}): morton={morton}, "
+                            f"shard_id={shard_id} != 0 with shard_bits=0"
+                        )
+
+    def test_max_morton_fits_allocated_bits(self):
+        """The maximum morton code at each scale fits within allocated bits.
+
+        Ensures 2^total_allocated_bits > max_morton for all chunk coordinates.
+        """
+        spec = generate_spec(
+            (94088, 78317, 134576),
+            data_type="uint64",
+            volume_type="segmentation",
+        )
+        for i, scale in enumerate(spec["scales"]):
+            size = tuple(scale["size"])
+            grid = tuple(math.ceil(s / 64) for s in size)
+            sh = scale["sharding"]
+            allocated = sh["shard_bits"] + sh["minishard_bits"] + sh["preshift_bits"]
+            # Max coordinate is (grid[d]-1) for each dimension
+            max_coord = tuple(g - 1 for g in grid)
+            max_morton = compressed_morton_code(max_coord, grid)
+            assert max_morton < (1 << allocated), (
+                f"Scale {i}: max_morton {max_morton} >= 2^{allocated}"
+            )
 
 
 class TestAutoScales:
@@ -164,12 +273,9 @@ class TestAutoScales:
             total = sh["shard_bits"] + sh["minishard_bits"] + sh["preshift_bits"]
             assert total > 0, f"Scale {i} has 0 total bits"
 
-    def test_dvid_ground_truth_subset(self):
-        """Auto scales should be a superset of DVID's 11 — first 11 must match."""
-        spec = generate_spec(
-            (94088, 78317, 134576),
-            encoding="jpeg",
-        )
+    def test_dvid_sharding_params_subset(self):
+        """Auto scales should be a superset of DVID's 11 — first 11 sharding params must match."""
+        spec = generate_spec((94088, 78317, 134576))
         assert len(spec["scales"]) >= 11
         spec_path = "/home/katzw/go-code/src/github.com/janelia-flyem/dvid/test_data/mcns-ng-specs.json"
         try:

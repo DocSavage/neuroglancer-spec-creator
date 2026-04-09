@@ -1,7 +1,8 @@
 """Bit parameter computation for neuroglancer precomputed sharding.
 
 Computes shard_bits, minishard_bits, and preshift_bits from volume/grid
-dimensions. The algorithm is derived from analyzing known-good specs in DVID.
+dimensions. Bit-per-dimension calculation matches tensorstore's
+GetCompressedZIndexBits: bit_width(ceil(shape/chunk) - 1).
 """
 
 import math
