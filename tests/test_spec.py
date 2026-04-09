@@ -102,12 +102,6 @@ class TestDvidShardingComparison:
     """
 
     def test_sharding_params_match_dvid(self):
-        spec = generate_spec(
-            (94088, 78317, 134576),
-            num_scales=11,
-            voxel_resolution=(8.0, 8.0, 8.0),
-        )
-
         spec_path = "/home/katzw/go-code/src/github.com/janelia-flyem/dvid/test_data/mcns-ng-specs.json"
         try:
             with open(spec_path) as f:
@@ -115,6 +109,12 @@ class TestDvidShardingComparison:
         except FileNotFoundError:
             import pytest
             pytest.skip("DVID test data not available")
+
+        spec = generate_spec(
+            (94088, 78317, 134576),
+            num_scales=len(expected["scales"]),
+            voxel_resolution=(8.0, 8.0, 8.0),
+        )
 
         assert len(spec["scales"]) == len(expected["scales"])
 
@@ -289,6 +289,136 @@ class TestAutoScales:
             exp_sh = expected["scales"][i]["sharding"]
             for field in ("shard_bits", "minishard_bits", "preshift_bits"):
                 assert gen_sh[field] == exp_sh[field], f"Scale {i} {field}"
+
+
+class TestAnisotropicDownsampling:
+    """Validate anisotropic downsampling for volumes with non-uniform resolution.
+
+    When voxel resolution differs across dimensions, only the finer dimensions
+    are downsampled until they catch up to the coarsest, then all dimensions
+    downsample together.
+    """
+
+    def test_fish2_anisotropic_sizes(self):
+        """Fish2 EM grayscale: Z is not halved until X,Y catch up to 30nm."""
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            voxel_resolution=(8.0, 8.0, 30.0),
+        )
+        # Scales 0-2: only X,Y halve, Z stays at 10254
+        for i in range(3):
+            assert spec["scales"][i]["size"][2] == 10254, f"Scale {i}: Z should not halve"
+        # Scale 3: all halve — Z becomes ceil(10254/2) = 5127
+        assert spec["scales"][3]["size"][2] == 5127
+
+    def test_fish2_anisotropic_resolutions(self):
+        """Resolution only doubles for halved dimensions."""
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            voxel_resolution=(8.0, 8.0, 30.0),
+        )
+        assert spec["scales"][0]["resolution"] == [8.0, 8.0, 30.0]
+        assert spec["scales"][1]["resolution"] == [16.0, 16.0, 30.0]
+        assert spec["scales"][2]["resolution"] == [32.0, 32.0, 30.0]
+        assert spec["scales"][3]["resolution"] == [64.0, 64.0, 60.0]
+        assert spec["scales"][4]["resolution"] == [128.0, 128.0, 120.0]
+
+    def test_fish2_sharding_matches_em_info_from_scale3(self):
+        """With 64^3 chunks, scales 3+ match the EM info.json sharding exactly.
+
+        Scales 0-2 of the ground truth EM info use different chunk sizes
+        ([128,128,32] and [128,128,64]) so their sharding params differ.
+        """
+        # Ground truth from the EM info.json, scales 3-10 (all use 64^3 chunks)
+        expected_sharding = [
+            # (size, shard_bits, minishard_bits, preshift_bits)
+            ([25600, 14336, 5127], 9, 6, 9),
+            ([12800, 7168, 2564], 6, 6, 9),
+            ([6400, 3584, 1282], 3, 6, 9),
+            ([3200, 1792, 641], 0, 6, 9),
+            ([1600, 896, 321], 0, 3, 9),
+            ([800, 448, 161], 0, 0, 9),
+            ([400, 224, 81], 0, 0, 6),
+            ([200, 112, 41], 0, 0, 3),
+        ]
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            voxel_resolution=(8.0, 8.0, 30.0),
+        )
+        for j, (exp_size, exp_shard, exp_mini, exp_pre) in enumerate(expected_sharding):
+            i = j + 3  # offset to scale 3
+            scale = spec["scales"][i]
+            sh = scale["sharding"]
+            assert scale["size"] == exp_size, f"Scale {i} size"
+            assert sh["shard_bits"] == exp_shard, f"Scale {i} shard_bits"
+            assert sh["minishard_bits"] == exp_mini, f"Scale {i} minishard_bits"
+            assert sh["preshift_bits"] == exp_pre, f"Scale {i} preshift_bits"
+
+    def test_isotropic_unchanged(self):
+        """Isotropic resolution should halve all dimensions every scale (unchanged behavior)."""
+        spec = generate_spec(
+            (94088, 78317, 134576),
+            num_scales=3,
+            voxel_resolution=(8.0, 8.0, 8.0),
+        )
+        for i in range(1, 3):
+            prev = spec["scales"][i - 1]["size"]
+            curr = spec["scales"][i]["size"]
+            for d in range(3):
+                assert curr[d] == math.ceil(prev[d] / 2)
+
+    def test_anisotropic_keys(self):
+        """Keys reflect the anisotropic resolution."""
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            voxel_resolution=(8.0, 8.0, 30.0),
+        )
+        assert spec["scales"][0]["key"] == "8x8x30"
+        assert spec["scales"][1]["key"] == "16x16x30"
+        assert spec["scales"][2]["key"] == "32x32x30"
+        assert spec["scales"][3]["key"] == "64x64x60"
+
+    def test_decimal_keys(self):
+        """decimal_keys=True produces keys like '8.0x8.0x30.0'."""
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            num_scales=2,
+            voxel_resolution=(8.0, 8.0, 30.0),
+            decimal_keys=True,
+        )
+        assert spec["scales"][0]["key"] == "8.0x8.0x30.0"
+        assert spec["scales"][1]["key"] == "16.0x16.0x30.0"
+
+    def test_per_dim_chunk_size(self):
+        """Per-dimension chunk sizes produce correct grid and sharding."""
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            num_scales=1,
+            voxel_resolution=(8.0, 8.0, 30.0),
+            chunk_size=(128, 128, 32),
+        )
+        scale = spec["scales"][0]
+        assert scale["chunk_sizes"] == [[128, 128, 32]]
+        # Grid: ceil(204800/128)=1600, ceil(114688/128)=896, ceil(10254/32)=321
+        sh = scale["sharding"]
+        # bits: (1600-1).bit_length()=11, (896-1).bit_length()=10, (321-1).bit_length()=9
+        # total=30, pre=9, mini=6, shard=15
+        assert sh["shard_bits"] == 15
+        assert sh["minishard_bits"] == 6
+        assert sh["preshift_bits"] == 9
+
+    def test_bits_always_sum_with_anisotropic(self):
+        """shard + mini + pre should equal total chunk bits for anisotropic volumes."""
+        from ngspec.sharding import compute_sharding_params
+        spec = generate_spec(
+            (204800, 114688, 10254),
+            voxel_resolution=(8.0, 8.0, 30.0),
+        )
+        for i, scale in enumerate(spec["scales"]):
+            params = compute_sharding_params(tuple(scale["size"]))
+            sh = scale["sharding"]
+            total = sh["shard_bits"] + sh["minishard_bits"] + sh["preshift_bits"]
+            assert total == params["total_chunk_bits"], f"Scale {i} bits don't sum"
 
 
 class TestVolumeTypes:

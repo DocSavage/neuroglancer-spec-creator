@@ -6,7 +6,8 @@ An educational Manim-based Python application that computes neuroglancer precomp
 
 - `ngspec/` — Core computation (no Manim dependency): morton codes, sharding params, spec generation
 - `scenes/` — Manim scene definitions for animated visualizations
-- `cli.py` — CLI entry point (`pixi run generate` / `pixi run animate`)
+- `cli.py` — CLI entry point (`pixi run generate` / `pixi run animate`); `--seg` (default) / `--em` presets; JSON to stdout
+- `spec_examples/` — Example spec JSON files (male CNS and fish2 volumes)
 - `tests/` — pytest tests validating against known-good DVID specs
 
 ## Development
@@ -22,7 +23,7 @@ pixi run animate      # Render Manim scenes
 
 - **Compressed morton code**: Bits per dimension = `(grid_size - 1).bit_length()` (equivalent to `ceil(log2(grid_size))` for grid_size > 0). The interleaving skips dimensions that have exhausted their bits.
 - **Sharding params**: `total_bits = sum(bits_per_dim)`, then allocate preshift (target 9), minishard (target 6), remainder to shard_bits.
-- **Scale halving**: Each scale halves the volume with ceiling division: `ceil(size / 2)`.
+- **Scale halving**: Each scale halves the volume with ceiling division: `ceil(size / 2)`. For anisotropic resolutions, only dimensions where `res < (2/3) * max_initial_res` are halved until they catch up.
 
 ## Ground truth test data
 

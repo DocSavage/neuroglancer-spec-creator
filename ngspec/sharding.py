@@ -12,7 +12,7 @@ from ngspec.morton import total_chunk_bits
 
 def compute_sharding_params(
     volume_size: tuple[int, int, int],
-    chunk_size: int = 64,
+    chunk_size: int | tuple[int, int, int] = 64,
     target_preshift: int = 9,
     target_minishard: int = 6,
 ) -> dict:
@@ -21,12 +21,19 @@ def compute_sharding_params(
     The total bits must equal the sum of chunk coordinate bits across
     all dimensions (so the morton code covers the full coordinate space).
 
+    chunk_size can be a single int (isotropic) or a 3-tuple for
+    per-dimension chunk sizes.
+
     Priority: preshift_bits >= minishard_bits >= shard_bits
     - preshift controls spatial locality within minishards
     - minishard controls internal shard organization
     - shard controls number of shard files (2^shard_bits)
     """
-    grid_size = tuple(math.ceil(s / chunk_size) for s in volume_size)
+    if isinstance(chunk_size, (list, tuple)):
+        cs = tuple(chunk_size)
+    else:
+        cs = (chunk_size, chunk_size, chunk_size)
+    grid_size = tuple(math.ceil(volume_size[d] / cs[d]) for d in range(3))
     total = total_chunk_bits(grid_size)
 
     preshift = min(target_preshift, total)

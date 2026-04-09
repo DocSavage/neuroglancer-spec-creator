@@ -32,38 +32,54 @@ pixi install -e viz
 ### Generate a spec
 
 ```bash
-pixi run generate --size 94088,78317,134576
+# Segmentation spec (default) — pipe JSON to a file
+pixi run generate --size 102400,57344,20508 --resolution 16,16,15 > seg_spec.json
+
+# EM grayscale spec
+pixi run generate --em --size 204800,114688,10254 --resolution 8,8,30 > em_spec.json
 ```
 
 The number of scales is auto-computed — it stops at the last scale where the chunk grid has more than one chunk in any dimension. You can override with `--scales N`.
 
-Output:
+For anisotropic resolutions, only the finer dimensions are downsampled until they catch up to the coarsest, then all dimensions downsample together.
+
+JSON is written to stdout; the summary table goes to stderr so you always see it:
 
 ```
-Scale  Size                         Grid                   Bits             Shard  Mini   Pre  Total    #Shards
----------------------------------------------------------------------------------------------------------
-0      94088x78317x134576           1471x1224x2103         11+11+12=34         19     6     9     34     524288
-1      47044x39159x67288            736x612x1052           10+10+11=31         16     6     9     31      65536
+Mode: seg (uint64, compressed_segmentation)
+
+Scale  Size                   Grid               Bits          Shard  Mini   Pre  Total    #Shards
+--------------------------------------------------------------------------------------------------
+0      102400x57344x20508     1600x896x321       11+10+9=30       15     6     9     30      32768
+1      51200x28672x10254      800x448x161        10+9+8=27        12     6     9     27       4096
 ...
-11     46x39x66                     1x1x2                  0+0+1=1              0     0     1      1          1
-
-Written: neuroglancer_spec.json
 ```
+
+Presets:
+
+| | `--seg` (default) | `--em` |
+|---|---|---|
+| `data_type` | `uint64` | `uint8` |
+| `type` | `segmentation` | `image` |
+| `encoding` | `compressed_segmentation` | `jpeg` |
+| `data_encoding` | `gzip` | _(none)_ |
+| `compressed_segmentation_block_size` | `[8, 8, 8]` | _(none)_ |
+| `voxel_offset` | `[0, 0, 0]` | _(none)_ |
 
 Options:
 
 ```
 --size X,Y,Z          Volume dimensions in voxels (required)
+--seg / --em          Segmentation [default] or EM grayscale preset
 --scales N            Number of resolution scales (default: auto)
 --resolution R        Base voxel resolution, 1 or 3 values (default: 8)
---chunk-size N        Chunk size in voxels (default: 64)
---data-type TYPE      uint8, uint16, uint32, uint64, float32 (default: uint8)
---volume-type TYPE    image or segmentation (default: image)
---encoding ENC        jpeg, compressed_segmentation, raw (default: auto)
---output PATH         Output file (default: neuroglancer_spec.json)
+--chunk-size N        Chunk size, 1 or 3 values (default: 64, e.g., 128,128,32)
+--decimal-keys        Use decimal key format (e.g., 8.0x8.0x30.0)
 --target-preshift N   Target preshift_bits (default: 9)
 --target-minishard N  Target minishard_bits (default: 6)
 ```
+
+See `spec_examples/` for complete example specs (male CNS and fish2 volumes).
 
 ### Render animations
 
@@ -124,6 +140,7 @@ scenes/                  Manim scene definitions
   scene_bits.py          Bit allocation visualization
   scene_shards.py        3D shard visualization
   scene_multiscale.py    Multi-scale walkthrough
+spec_examples/           Example spec JSON files
 cli.py                   CLI entry point
 tests/                   Tests (validated against DVID ground truth)
 ```

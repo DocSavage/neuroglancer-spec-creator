@@ -1,0 +1,356 @@
+{
+  "@type": "neuroglancer_multiscale_volume",
+  "data_type": "uint8",
+  "num_channels": 1,
+  "scales": [
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "8x8x30",
+      "resolution": [
+        8.0,
+        8.0,
+        30.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 16
+      },
+      "size": [
+        204800,
+        114688,
+        10254
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "16x16x30",
+      "resolution": [
+        16.0,
+        16.0,
+        30.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 14
+      },
+      "size": [
+        102400,
+        57344,
+        10254
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "32x32x30",
+      "resolution": [
+        32.0,
+        32.0,
+        30.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 12
+      },
+      "size": [
+        51200,
+        28672,
+        10254
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "64x64x60",
+      "resolution": [
+        64.0,
+        64.0,
+        60.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 9
+      },
+      "size": [
+        25600,
+        14336,
+        5127
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "128x128x120",
+      "resolution": [
+        128.0,
+        128.0,
+        120.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 6
+      },
+      "size": [
+        12800,
+        7168,
+        2564
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "256x256x240",
+      "resolution": [
+        256.0,
+        256.0,
+        240.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 3
+      },
+      "size": [
+        6400,
+        3584,
+        1282
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "512x512x480",
+      "resolution": [
+        512.0,
+        512.0,
+        480.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 6,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 0
+      },
+      "size": [
+        3200,
+        1792,
+        641
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "1024x1024x960",
+      "resolution": [
+        1024.0,
+        1024.0,
+        960.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 3,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 0
+      },
+      "size": [
+        1600,
+        896,
+        321
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "2048x2048x1920",
+      "resolution": [
+        2048.0,
+        2048.0,
+        1920.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 0,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 9,
+        "shard_bits": 0
+      },
+      "size": [
+        800,
+        448,
+        161
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "4096x4096x3840",
+      "resolution": [
+        4096.0,
+        4096.0,
+        3840.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 0,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 6,
+        "shard_bits": 0
+      },
+      "size": [
+        400,
+        224,
+        81
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "8192x8192x7680",
+      "resolution": [
+        8192.0,
+        8192.0,
+        7680.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 0,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 3,
+        "shard_bits": 0
+      },
+      "size": [
+        200,
+        112,
+        41
+      ]
+    },
+    {
+      "chunk_sizes": [
+        [
+          64,
+          64,
+          64
+        ]
+      ],
+      "encoding": "jpeg",
+      "key": "16384x16384x15360",
+      "resolution": [
+        16384.0,
+        16384.0,
+        15360.0
+      ],
+      "sharding": {
+        "@type": "neuroglancer_uint64_sharded_v1",
+        "hash": "identity",
+        "minishard_bits": 0,
+        "minishard_index_encoding": "gzip",
+        "preshift_bits": 1,
+        "shard_bits": 0
+      },
+      "size": [
+        100,
+        56,
+        21
+      ]
+    }
+  ],
+  "type": "image"
+}
